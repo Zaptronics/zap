@@ -1,0 +1,6 @@
+/zap
+/zap.exe
+/dist/
+/stage/
+*.test
+*.patch

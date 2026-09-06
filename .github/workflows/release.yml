@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+      - name: Test
+        run: go test ./...
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist stage
+          build_zip() {
+            GOOS="$1" GOARCH="$2" CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "stage/zap.exe" ./cmd/zap
+            (cd stage && zip -q "../dist/zap_${1}_${2}.zip" zap.exe)
+            rm -f stage/zap.exe
+          }
+          build_tgz() {
+            GOOS="$1" GOARCH="$2" CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "stage/zap" ./cmd/zap
+            tar -C stage -czf "dist/zap_${1}_${2}.tar.gz" zap
+            rm -f stage/zap
+          }
+          build_zip windows amd64
+          build_zip windows arm64
+          build_tgz linux amd64
+          build_tgz linux arm64
+          build_tgz darwin amd64
+          build_tgz darwin arm64
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes
