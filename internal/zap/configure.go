@@ -278,24 +278,31 @@ func (p *Project) ConfigureWithOptions(c *Config, o ConfigureOptions) error {
 				args = append(args, "-Dpicotool_DIR="+picotoolDir)
 			}
 		}
-		fmt.Printf("Configuring %s (%s, %s)\n", c.Project.Target, configuration, board)
-		fmt.Printf("  SDK      : %s\n", sdkPath)
-		fmt.Printf("  Toolchain: %s\n", toolchainPath)
-		fmt.Printf("  CMake    : %s (%s)\n", cmake, source)
+		uiSection("Configure")
+		uiStep("Target", fmt.Sprintf("%s · %s · %s", c.Project.Target, configuration, board))
+		uiDetail("SDK", sdkPath)
+		uiDetail("Toolchain", toolchainPath)
+		uiDetail("CMake", fmt.Sprintf("%s (%s)", cmake, source))
 		if ninja != "" {
-			fmt.Printf("  Ninja    : %s\n", ninja)
+			uiDetail("Ninja", ninja)
 		}
 		for _, name := range cacheOrder {
 			if spec := c.Build.CMake[name]; strings.HasPrefix(spec, "env:") {
-				fmt.Printf("  CMake    : %s <- %s\n", name, spec)
+				uiDetail("CMake var", fmt.Sprintf("%s <- %s", name, spec))
 			}
 		}
 		return runStreamingEnv("", extra, cmake, args...)
 
 	case "generic", "cmake":
+		uiSection("Configure")
+		uiStep("Target", fmt.Sprintf("%s · %s", c.Project.Target, configuration))
 		cmake, err := findProgram("cmake")
 		if err != nil {
 			return err
+		}
+		uiDetail("CMake", cmake)
+		if generator != "" {
+			uiDetail("Generator", generator)
 		}
 		args := appendCommon([]string{"-S", p.Root, "-B", buildPath})
 		if generator != "" {
@@ -304,10 +311,13 @@ func (p *Project) ConfigureWithOptions(c *Config, o ConfigureOptions) error {
 		return runStreamingEnv("", zapEnv, cmake, args...)
 
 	case "zephyr":
+		uiSection("Configure")
+		uiStep("Target", fmt.Sprintf("%s · %s · %s", c.Project.Target, configuration, board))
 		west, err := findProgram("west")
 		if err != nil {
 			return err
 		}
+		uiDetail("West", west)
 		if board == "" {
 			return fmt.Errorf("Zephyr projects require project.board in zap.yml")
 		}

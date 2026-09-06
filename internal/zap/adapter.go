@@ -152,6 +152,6 @@ void zap_%[1]s_ztm_adc_config(ztm_adc_config_t *config, zap_%[1]s_adapter_t *ada
 			return err
 		}
 	}
-	fmt.Printf("Created adapter skeleton in %s\n", out)
+	uiResult("ADAPTER CREATED", uiRow{Label: "Path", Value: out})
 	return nil
 }

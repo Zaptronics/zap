@@ -54,7 +54,8 @@ func (p *Project) Generate(c *Config) error {
 	if err := os.WriteFile(p.GeneratedZephyr, []byte(GenerateZephyrConf(c)), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("Generated %s\n", p.GeneratedCMake)
+	uiSuccess("Generated CMake/Zephyr integration")
+	uiDetail("CMake", p.GeneratedCMake)
 	return nil
 }
 func (p *Project) Check(c *Config) error {
@@ -90,6 +91,14 @@ func (p *Project) Check(c *Config) error {
 	}
 	return nil
 }
+func shortCommit(commit string) string {
+	commit = strings.TrimSpace(commit)
+	if len(commit) > 12 {
+		return commit[:12]
+	}
+	return commit
+}
+
 func normalize(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	return strings.ReplaceAll(s, "\r", "\n")
@@ -124,6 +133,7 @@ func (p *Project) Sync(c *Config) error {
 	if err := validateConfig(c, false); err != nil {
 		return err
 	}
+	uiSection("Dependencies")
 	git, _ := findProgram("git")
 	locksChanged := c.Schema != ConfigSchema
 	for _, name := range c.DependencyOrder {
@@ -142,7 +152,8 @@ func (p *Project) Sync(c *Config) error {
 				return fmt.Errorf("dependency %q requires uri and version", name)
 			}
 			if overrideActive {
-				fmt.Printf("%s: local override %s\n", name, path)
+				uiStep(name, "local override")
+				uiDetail("Path", path)
 				if _, err := os.Stat(path); err != nil {
 					return fmt.Errorf("dependency %q local override was not found at %s", name, path)
 				}
@@ -154,7 +165,8 @@ func (p *Project) Sync(c *Config) error {
 				if d.Commit == "" {
 					d.Commit = sha
 					locksChanged = true
-					fmt.Printf("  locked %s to remote commit %s (local override remains active)\n", d.Version, d.Commit)
+					uiSuccess(fmt.Sprintf("Locked %s to %s", d.Version, shortCommit(d.Commit)))
+					uiHint("local override remains active")
 				} else if !strings.EqualFold(d.Commit, sha) {
 					return fmt.Errorf("dependency %q integrity failure: %s resolved to %s but zap.yml locks %s; review the remote change before updating the lock", name, d.Version, sha, d.Commit)
 				}
@@ -163,7 +175,7 @@ func (p *Project) Sync(c *Config) error {
 			if err := ensureGitRepo(git, name, path, d.URI); err != nil {
 				return err
 			}
-			fmt.Printf("Synchronising %s @ %s\n", name, d.Version)
+			uiStep(name, d.Version)
 			sha, err := fetchRevision(git, name, path, d.URI, d.Version)
 			if err != nil {
 				return err
@@ -172,7 +184,7 @@ func (p *Project) Sync(c *Config) error {
 			if d.Commit == "" {
 				d.Commit = sha
 				locksChanged = true
-				fmt.Printf("  locked %s to commit %s\n", d.Version, d.Commit)
+				uiSuccess(fmt.Sprintf("Locked %s to %s", d.Version, shortCommit(d.Commit)))
 			} else if !strings.EqualFold(d.Commit, sha) {
 				return fmt.Errorf("dependency %q integrity failure: %s resolved to %s but zap.yml locks %s; review the remote change before updating the lock", name, d.Version, sha, d.Commit)
 			}
@@ -186,12 +198,12 @@ func (p *Project) Sync(c *Config) error {
 				if err != nil {
 					return fmt.Errorf("%s: %w", name, err)
 				}
-				fmt.Printf("  sparse checkout: %d path(s), %d selected component(s)\n", len(paths), len(d.Components))
+				uiDetail("Checkout", fmt.Sprintf("%d paths · %d components", len(paths), len(d.Components)))
 				if err := checkoutSparse(git, path, sha, paths); err != nil {
 					return err
 				}
 			} else {
-				fmt.Printf("  package manifest not present; using full shallow checkout\n")
+				uiHint("package manifest not present; using full shallow checkout")
 				_ = runStreaming("", git, "-C", path, "sparse-checkout", "disable")
 				if err := runStreaming("", git, "-C", path, "checkout", "--detach", sha); err != nil {
 					return err
@@ -201,9 +213,10 @@ func (p *Project) Sync(c *Config) error {
 			if _, err := os.Stat(path); err != nil {
 				return fmt.Errorf("local dependency %q was not found at %s", name, path)
 			}
-			fmt.Printf("%s: local path %s\n", name, path)
+			uiStep(name, "local path")
+			uiDetail("Path", path)
 		case "url":
-			fmt.Printf("%s: URL dependency will be populated by CMake\n", name)
+			uiStep(name, "CMake URL dependency")
 		default:
 			return fmt.Errorf("unsupported dependency type %q", d.Type)
 		}
@@ -213,7 +226,8 @@ func (p *Project) Sync(c *Config) error {
 		if err := p.WriteConfig(c); err != nil {
 			return err
 		}
-		fmt.Printf("Updated %s with immutable dependency commit locks.\n", p.ConfigPath)
+		uiSuccess("Updated immutable dependency commit locks")
+		uiDetail("Manifest", p.ConfigPath)
 	}
 	return nil
 }

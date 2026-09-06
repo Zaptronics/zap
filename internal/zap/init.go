@@ -110,8 +110,7 @@ func (p *Project) Init(opts InitOptions) error {
 	uri := opts.ZapEEURI
 	git, gitErr := findProgram("git")
 	if interactive {
-		fmt.Println("Zap project setup")
-		fmt.Println()
+		uiBanner("Project setup", filepath.Base(p.Root))
 		var e error
 		env, e = promptChoice(r, "Environment:", []string{"pico-sdk", "zephyr", "generic"}, indexOf([]string{"pico-sdk", "zephyr", "generic"}, env))
 		if e != nil {
@@ -143,12 +142,12 @@ func (p *Project) Init(opts InitOptions) error {
 	if err := confirmExternalSources(r, sources, opts.AcceptSources, opts.NonInteractive); err != nil {
 		return err
 	}
-	fmt.Println("\nPlanned project changes:")
-	fmt.Println("  CREATE  zap.yml")
-	fmt.Println("  CREATE  cmake/zap_deps.cmake")
-	fmt.Println("  CREATE  cmake/zap_zephyr.conf")
-	fmt.Println("  EDIT    CMakeLists.txt - only inside clearly marked ZAP MANAGED BEGIN/END blocks")
-	fmt.Println("  LEAVE   west.yml, prj.conf, Pico SDK files, Zephyr source files, and other vendor build files unchanged")
+	uiSection("Planned changes")
+	uiStep("CREATE", "zap.yml")
+	uiStep("CREATE", "cmake/zap_deps.cmake")
+	uiStep("CREATE", "cmake/zap_zephyr.conf")
+	uiStep("EDIT", "CMakeLists.txt · only ZAP MANAGED blocks")
+	uiHint("vendor build files remain unchanged")
 	version := opts.ZapEEVersion
 	if version == "" {
 		if gitErr != nil {
@@ -162,7 +161,7 @@ func (p *Project) Init(opts InitOptions) error {
 			return fmt.Errorf("no stable semantic-version tags were found at %s", uri)
 		}
 		version = tags[0]
-		fmt.Printf("Latest ZapEE release: %s\n", version)
+		uiSuccess("Latest ZapEE release: " + version)
 	}
 	components := []string(opts.Components)
 	var manifest *PackageManifest
@@ -236,8 +235,8 @@ func (p *Project) Init(opts InitOptions) error {
 	if err := p.Generate(cfg); err != nil {
 		return err
 	}
-	fmt.Printf("Created %s\n", p.ConfigPath)
-	fmt.Println("Run 'zap sync' to fetch dependencies and configure the project.")
+	uiResult("PROJECT CREATED", uiRow{Label: "Manifest", Value: p.ConfigPath})
+	uiHint("run 'zap sync' to fetch dependencies and configure the project")
 	return nil
 }
 

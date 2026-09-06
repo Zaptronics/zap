@@ -8,9 +8,33 @@ CMake and Zephyr underneath.
 
 ## Install
 
-Download the binary for your operating system from the GitHub Releases page for
-`Zaptronics/zap` and put it on `PATH`. No PowerShell, Python, Node.js, .NET, or
-other runtime is required.
+### Windows
+
+```powershell
+winget install --id Zaptronics.Zap -e
+```
+
+### macOS
+
+```bash
+brew install --cask Zaptronics/tap/zap
+```
+
+### Linux
+
+GitHub Releases provide native `.deb` and `.rpm` packages for AMD64 and ARM64.
+For example:
+
+```bash
+sudo apt install ./zap_X.Y.Z_linux_amd64.deb
+# or
+sudo dnf install ./zap_X.Y.Z_linux_amd64.rpm
+```
+
+Portable ZIP/tar.gz downloads remain available from GitHub Releases. Zap is a
+single native executable; no PowerShell, Python, Node.js, .NET, or other runtime
+is required to run it. See `docs/RELEASE_DISTRIBUTION.md` for package publishing
+and release-maintainer setup.
 
 ## First project
 
@@ -286,6 +310,21 @@ zap check
 `zap audit` lists literal external dependency/source URLs found in `zap.yml`,
 root CMake, project `cmake/*.cmake`, and common West/Zephyr manifests.
 
+## Documentation
+
+- [`docs/FIRST_RUN.md`](docs/FIRST_RUN.md) — first-run project setup
+- [`docs/PACKAGE_MANIFEST.md`](docs/PACKAGE_MANIFEST.md) — package/component manifest format
+- [`docs/UPLOAD.md`](docs/UPLOAD.md) — upload/programming configuration
+- [`docs/HOW_TO_GIT.md`](docs/HOW_TO_GIT.md) — everyday Git workflow and creating GitHub releases
+- [`docs/RELEASE_DISTRIBUTION.md`](docs/RELEASE_DISTRIBUTION.md) — WinGet, Homebrew, DEB/RPM and release automation
+- [`docs/CODE_SIGNING.md`](docs/CODE_SIGNING.md) — Windows and macOS production signing setup
+
 ## License
 
 Apache-2.0.
+
+## Terminal output
+
+Zap uses ANSI colour and compact phase boxes when attached to an interactive terminal. Output automatically falls back to plain text when redirected, and honours the standard `NO_COLOR` environment variable.
+
+Colour behaviour can be overridden with `ZAP_COLOR=always`, `ZAP_COLOR=auto`, or `ZAP_COLOR=never`. External build-tool output from CMake, Ninja, west, Git, and compilers is streamed unchanged so diagnostics remain machine- and copy/paste-friendly.

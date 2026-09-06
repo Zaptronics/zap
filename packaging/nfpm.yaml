@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
+name: zap
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+release: 1
+section: devel
+priority: optional
+maintainer: Zaptronics Ltd
+vendor: Zaptronics Ltd
+homepage: https://github.com/Zaptronics/zap
+license: Apache-2.0
+description: Embedded project and dependency tooling for C/CMake
+contents:
+  - src: ${NFPM_BINARY}
+    dst: /usr/bin/zap
+    expand: true
+    file_info:
+      mode: 0755

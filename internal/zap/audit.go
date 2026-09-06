@@ -97,13 +97,13 @@ func confirmExternalSources(r *bufio.Reader, sources []externalSource, accept bo
 	if len(sources) == 0 {
 		return nil
 	}
-	fmt.Println("\nExternal dependency/source locations detected:")
-	for _, s := range sources {
-		fmt.Printf("  %-28s %s\n", s.File, s.URI)
+	uiSection("External sources")
+	for _, source := range sources {
+		uiDetail(source.File, source.URI)
 	}
-	fmt.Println("\nReview these carefully. Zap does not treat a URL as trusted merely because it appears in a build file.")
+	uiWarning("Review external sources carefully; URLs are not trusted merely because they appear in a build file")
 	if accept {
-		fmt.Println("External sources accepted by --accept-sources.")
+		uiSuccess("External sources accepted by --accept-sources")
 		return nil
 	}
 	if nonInteractive || !IsInteractive() {

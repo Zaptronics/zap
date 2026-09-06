@@ -44,7 +44,8 @@ func (p *Project) Verify(c *Config, opts VerifyOptions) error {
 					}
 				}
 				if !opts.CMake {
-					fmt.Printf("%s: local override %s is active; declared remote lock verified, but local override contents are intentionally developer-controlled\n", name, d.OverrideVar)
+					uiWarning(fmt.Sprintf("%s: local override %s is active", name, d.OverrideVar))
+					uiHint("remote lock verified; local override contents remain developer-controlled")
 				}
 				continue
 			}
@@ -90,9 +91,9 @@ func (p *Project) Verify(c *Config, opts VerifyOptions) error {
 	}
 	if !opts.CMake {
 		if opts.Offline {
-			fmt.Println("Dependency verification passed (offline: local locks only).")
+			uiSuccess("Dependency verification passed · offline locks only")
 		} else {
-			fmt.Println("Dependency verification passed.")
+			uiSuccess("Dependency verification passed")
 		}
 	}
 	return nil

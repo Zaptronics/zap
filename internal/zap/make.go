@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type MakeOptions struct {
@@ -93,17 +94,27 @@ func safeRemoveBuildDir(projectRoot, buildPath string) error {
 	if _, err := os.Stat(build); os.IsNotExist(err) {
 		return nil
 	}
-	fmt.Printf("Removing %s\n", build)
+	uiStep("Clean", build)
 	return os.RemoveAll(build)
 }
 
 func (p *Project) Make(c *Config, o MakeOptions) error {
+	started := time.Now()
 	if o.Configuration == "" {
 		o.Configuration = c.Build.Configuration
 	}
 	if o.Configuration == "" {
 		o.Configuration = "Release"
 	}
+	detail := fmt.Sprintf("%s · %s · %s", c.Project.Target, c.Project.Environment, o.Configuration)
+	board := o.Board
+	if board == "" {
+		board = c.Project.Board
+	}
+	if board != "" {
+		detail += " · " + board
+	}
+	uiBanner("Build", detail)
 	switch o.Configuration {
 	case "Debug", "Release", "RelWithDebInfo", "MinSizeRel":
 	default:
@@ -150,11 +161,12 @@ func (p *Project) Make(c *Config, o MakeOptions) error {
 		return err
 	}
 	if o.ConfigureOnly {
-		fmt.Println("Configuration complete; compilation was skipped.")
+		uiResult("CONFIGURATION COMPLETE", uiRow{Label: "Target", Value: c.Project.Target}, uiRow{Label: "Build", Value: buildPath})
 		return nil
 	}
 
-	fmt.Printf("Building %s\n", c.Project.Target)
+	uiSection("Compile")
+	uiStep("Target", c.Project.Target)
 	switch strings.ToLower(c.Project.Environment) {
 	case "zephyr":
 		west, err := findProgram("west")
@@ -187,7 +199,7 @@ func (p *Project) Make(c *Config, o MakeOptions) error {
 		}
 	}
 
-	return p.reportBuildOutputs(c, buildPath)
+	return p.reportBuildOutputs(c, buildPath, time.Since(started))
 }
 
 func zapExecutableEnv(offline bool) []string {
@@ -201,11 +213,16 @@ func zapExecutableEnv(offline bool) []string {
 	return env
 }
 
-func (p *Project) reportBuildOutputs(c *Config, buildPath string) error {
-	fmt.Println()
-	fmt.Println("Build complete.")
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%d ms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1f s", d.Seconds())
+}
+
+func (p *Project) reportBuildOutputs(c *Config, buildPath string, elapsed time.Duration) error {
 	if strings.ToLower(c.Project.Environment) != "pico-sdk" {
-		fmt.Printf("  Build directory: %s\n", buildPath)
+		uiResult("BUILD COMPLETE", uiRow{Label: "Target", Value: c.Project.Target}, uiRow{Label: "Build", Value: buildPath}, uiRow{Label: "Elapsed", Value: formatDuration(elapsed)})
 		return nil
 	}
 	target := c.Project.Target
@@ -214,9 +231,11 @@ func (p *Project) reportBuildOutputs(c *Config, buildPath string) error {
 	if _, err := os.Stat(uf2); err != nil {
 		return fmt.Errorf("build completed but %s was not produced", uf2)
 	}
-	fmt.Printf("  UF2: %s\n", uf2)
+	rows := []uiRow{{Label: "Target", Value: target}, {Label: "UF2", Value: uf2}}
 	if _, err := os.Stat(elf); err == nil {
-		fmt.Printf("  ELF: %s\n", elf)
+		rows = append(rows, uiRow{Label: "ELF", Value: elf})
 	}
+	rows = append(rows, uiRow{Label: "Elapsed", Value: formatDuration(elapsed)})
+	uiResult("BUILD COMPLETE", rows...)
 	return nil
 }

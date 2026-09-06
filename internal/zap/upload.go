@@ -74,6 +74,9 @@ func (p *Project) Upload(c *Config, o UploadOptions) error {
 		}
 	}
 
+	uiBanner("Upload", c.Project.Target)
+	uiSection("Program")
+
 	selected := strings.TrimSpace(o.Method)
 	if selected == "" {
 		selected = strings.TrimSpace(c.Upload.Default)
@@ -91,7 +94,7 @@ func (p *Project) Upload(c *Config, o UploadOptions) error {
 		}
 		var failures []string
 		for _, name := range c.Upload.Order {
-			fmt.Printf("Trying upload method %s\n", name)
+			uiStep("Try", name)
 			err := p.runUploadMethod(c, name, o)
 			if err == nil {
 				return nil
@@ -101,9 +104,9 @@ func (p *Project) Upload(c *Config, o UploadOptions) error {
 			}
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 			if !isUnavailable(err) {
-				fmt.Printf("  %s failed: %v\n", name, err)
+				uiWarning(fmt.Sprintf("%s failed: %v", name, err))
 			} else {
-				fmt.Printf("  %s unavailable: %v\n", name, err)
+				uiHint(fmt.Sprintf("%s unavailable: %v", name, err))
 			}
 		}
 		return fmt.Errorf("no configured upload method succeeded:\n  %s", strings.Join(failures, "\n  "))
@@ -166,11 +169,13 @@ func (p *Project) runUploadMethod(c *Config, name string, o UploadOptions) error
 			return fatalUploadf("more than one matching upload volume is mounted: %s; disconnect the target you do not want to program", strings.Join(roots, ", "))
 		}
 		dst := filepath.Join(roots[0], filepath.Base(artifact))
-		fmt.Printf("Copying %s -> %s\n", artifact, dst)
+		uiStep("Copy", filepath.Base(artifact))
+		uiDetail("Destination", dst)
 		if err := copyFile(artifact, dst); err != nil {
 			return fatalUploadf("copy to selected programming volume failed: %v", err)
 		}
-		fmt.Println("Upload complete; the target should reboot automatically if the volume implements UF2-style programming.")
+		uiResult("UPLOAD COMPLETE", uiRow{Label: "Method", Value: name}, uiRow{Label: "Artifact", Value: artifact})
+		uiHint("target should reboot automatically if the volume supports UF2 programming")
 		return nil
 
 	case "command":
@@ -205,10 +210,11 @@ func (p *Project) runUploadMethod(c *Config, name string, o UploadOptions) error
 				wd = filepath.Join(p.Root, wd)
 			}
 		}
-		fmt.Printf("Uploading with %s: %s\n", name, program)
+		uiStep(name, program)
 		if err := runStreamingEnv(wd, nil, program, args...); err != nil {
 			return err
 		}
+		uiResult("UPLOAD COMPLETE", uiRow{Label: "Method", Value: name}, uiRow{Label: "Artifact", Value: artifact})
 		return nil
 	default:
 		return fmt.Errorf("upload method %q has unsupported type %q", name, m.Type)

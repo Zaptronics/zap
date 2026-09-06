@@ -28,7 +28,7 @@ func Run(args []string) error {
 		printHelp()
 		return nil
 	case "--version", "version-tool":
-		fmt.Printf("zap %s\n", Version)
+		fmt.Printf("%s %s\n", paint(ansiEnabled(os.Stdout), ansiBold+ansiCyan, "zap"), Version)
 		return nil
 	case "init", "new":
 		fs, o := InitFlagSet()
@@ -68,6 +68,7 @@ func Run(args []string) error {
 		if err != nil {
 			return err
 		}
+		uiBanner("Generate", c.Project.Target)
 		return p.Generate(c)
 	case "check":
 		c, err := p.ReadConfig()
@@ -77,7 +78,7 @@ func Run(args []string) error {
 		if err := p.Check(c); err != nil {
 			return err
 		}
-		fmt.Println("zap.yml, generated CMake glue, and CMake integration are in sync.")
+		uiResult("PROJECT CHECK PASSED", uiRow{Label: "Manifest", Value: "zap.yml"}, uiRow{Label: "Generated", Value: "in sync"})
 		return nil
 	case "verify":
 		fs := flag.NewFlagSet("verify", flag.ContinueOnError)
@@ -90,19 +91,23 @@ func Run(args []string) error {
 		if err != nil {
 			return err
 		}
+		if !*cmakeMode {
+			uiBanner("Verify", c.Project.Target)
+		}
 		return p.Verify(c, VerifyOptions{Offline: *offline, CMake: *cmakeMode})
 	case "audit":
+		uiBanner("Audit", filepath.Base(p.Root))
 		sources, err := scanExternalSources(p.Root)
 		if err != nil {
 			return err
 		}
 		if len(sources) == 0 {
-			fmt.Println("No literal external dependency/source URLs were found in zap.yml or the supported build manifests.")
+			uiSuccess("No literal external dependency/source URLs found")
 			return nil
 		}
-		fmt.Println("External dependency/source locations detected:")
+		uiSection("External sources")
 		for _, src := range sources {
-			fmt.Printf("  %-28s %s\n", src.File, src.URI)
+			uiDetail(src.File, src.URI)
 		}
 		return nil
 	case "list":
@@ -154,6 +159,7 @@ func runSync(p *Project, args []string) error {
 	if err != nil {
 		return err
 	}
+	uiBanner("Sync", fmt.Sprintf("%s · %s", c.Project.Target, c.Project.Environment))
 	if err := p.Sync(c); err != nil {
 		return err
 	}
@@ -171,23 +177,29 @@ func listConfig(p *Project) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Environment : %s\nTarget      : %s\n", c.Project.Environment, c.Project.Target)
-	if len(c.Upload.MethodOrder) > 0 {
-		fmt.Printf("Upload      : %s", c.Upload.Default)
-		if strings.EqualFold(c.Upload.Default, "auto") && len(c.Upload.Order) > 0 {
-			fmt.Printf(" (%s)", strings.Join(c.Upload.Order, " -> "))
-		}
-		fmt.Println()
+	uiBanner("Project", c.Project.Target)
+	uiDetail("Environment", c.Project.Environment)
+	uiDetail("Target", c.Project.Target)
+	if c.Project.Board != "" {
+		uiDetail("Board", c.Project.Board)
 	}
+	if len(c.Upload.MethodOrder) > 0 {
+		upload := c.Upload.Default
+		if strings.EqualFold(c.Upload.Default, "auto") && len(c.Upload.Order) > 0 {
+			upload += " · " + strings.Join(c.Upload.Order, " → ")
+		}
+		uiDetail("Upload", upload)
+	}
+	uiSection("Dependencies")
 	for _, n := range c.DependencyOrder {
 		d := c.Dependencies[n]
-		fmt.Printf("%s  %s  %s  %s", n, d.Type, d.URI, d.Version)
+		uiStep(n, fmt.Sprintf("%s · %s", d.Type, d.Version))
+		uiDetail("Source", d.URI)
 		if d.Commit != "" {
-			fmt.Printf("  commit=%s", d.Commit)
+			uiDetail("Commit", shortCommit(d.Commit))
 		}
-		fmt.Println()
-		for _, x := range d.Components {
-			fmt.Printf("  -> %s\n", x)
+		if len(d.Components) > 0 {
+			uiDetail("Components", strings.Join(d.Components, ", "))
 		}
 	}
 	return nil
@@ -198,30 +210,38 @@ func status(p *Project) error {
 	if err != nil {
 		return err
 	}
+	uiBanner("Status", c.Project.Target)
 	git, _ := findProgram("git")
 	for _, n := range c.DependencyOrder {
 		d := c.Dependencies[n]
 		path := p.dependencyPath(c, n, d)
-		fmt.Printf("%s\n  configured : %s %s %s\n", n, d.Type, d.URI, d.Version)
+		uiSection(n)
+		uiDetail("Configured", fmt.Sprintf("%s %s %s", d.Type, d.URI, d.Version))
 		if d.Commit != "" {
-			fmt.Printf("  locked     : %s\n", d.Commit)
+			uiDetail("Locked", d.Commit)
 		}
-		fmt.Printf("  path       : %s\n", path)
+		uiDetail("Path", path)
 		if strings.ToLower(d.Type) != "git" {
 			continue
 		}
 		if git == "" {
-			fmt.Println("  checkout   : git not found")
+			uiWarning("checkout: git not found")
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
-			fmt.Println("  checkout   : not fetched")
+			uiWarning("checkout: not fetched")
 			continue
 		}
 		head, _ := runCapture("", git, "-C", path, "rev-parse", "--short=12", "HEAD")
 		origin, _ := runCapture("", git, "-C", path, "remote", "get-url", "origin")
 		clean, _, _ := gitClean(git, path)
-		fmt.Printf("  head       : %s\n  origin     : %s\n  dirty      : %v\n", head, origin, !clean)
+		uiDetail("Head", head)
+		uiDetail("Origin", origin)
+		if clean {
+			uiSuccess("Working tree clean")
+		} else {
+			uiWarning("Working tree has local changes")
+		}
 	}
 	return nil
 }
@@ -246,15 +266,17 @@ func update(p *Project, name string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s currently uses %s\nAvailable releases (newest first):\n", name, d.Version)
-	for _, t := range tags {
-		m := " "
-		if t == d.Version {
-			m = "*"
+	uiBanner("Releases", name)
+	uiDetail("Current", d.Version)
+	uiSection("Available")
+	for _, tag := range tags {
+		if tag == d.Version {
+			uiSuccess(tag + " · current")
+		} else {
+			uiStep("Release", tag)
 		}
-		fmt.Printf("  %s %s\n", m, t)
 	}
-	fmt.Printf("Use 'zap version %s <tag>' to select a release.\n", name)
+	uiHint(fmt.Sprintf("use 'zap version %s <tag>' to select a release", name))
 	return nil
 }
 func setVersion(p *Project, name, v string) error {
@@ -287,7 +309,8 @@ func setVersion(p *Project, name, v string) error {
 	if err := p.WriteConfig(c); err != nil {
 		return err
 	}
-	fmt.Printf("%s: %s locked to %s\n", name, v, sha)
+	uiSuccess(fmt.Sprintf("%s locked to %s", name, v))
+	uiDetail("Commit", sha)
 	return p.Generate(c)
 }
 
@@ -341,27 +364,35 @@ func removeComponent(p *Project, name, comp string, syncNow bool) error {
 }
 
 func printHelp() {
-	fmt.Println(`zap - friendly dependency and project helper for embedded C/CMake
+	uiHelpHeader()
+	uiHelpUsage("zap <command> [options]")
 
-Usage:
-  zap init                 Initialise zap.yml and CMake integration
-  zap sync                 Fetch/sparse-checkout dependencies and configure (bare 'zap' is the same)
-  zap make [--clean]       Sync, configure, and compile the project
-  zap upload [--build]     Program/upload using methods declared in zap.yml
-  zap status               Show configured and checked-out dependency state
-  zap verify [--offline]   Verify local copies and immutable remote locks
-  zap audit                List literal external sources found in project build manifests
-  zap list                 Show project dependencies and selected targets
-  zap update <dep>         Show available stable release tags
-  zap version <dep> <ref>  Pin a dependency version/ref in zap.yml
-  zap add <dep> <target>   Add a component and synchronise
-  zap remove <dep> <target> Remove a component and synchronise
-  zap adapter [name]       Generate a portable platform adapter skeleton
-  zap generate             Regenerate CMake/Zephyr glue only
-  zap check                Verify generated files and integration markers
+	uiHelpSection("Everyday")
+	uiHelpCommand("zap", "", "Sync dependencies, generate glue, and configure")
+	uiHelpCommand("zap make", "[--clean]", "Sync, configure, and compile the project")
+	uiHelpCommand("zap upload", "[--build]", "Program/upload using methods declared in zap.yml")
+	uiHelpCommand("zap status", "", "Show configured and checked-out dependency state")
 
-Build and upload settings live in zap.yml; command-line flags can override the common workflow choices.
+	uiHelpSection("Project")
+	uiHelpCommand("zap init", "", "Initialise zap.yml and CMake integration")
+	uiHelpCommand("zap sync", "[--no-configure]", "Fetch dependencies and configure the project")
+	uiHelpCommand("zap generate", "", "Regenerate CMake/Zephyr glue only")
+	uiHelpCommand("zap check", "", "Verify generated files and integration markers")
+	uiHelpCommand("zap adapter", "[name]", "Generate a portable platform adapter skeleton")
 
-The zap tool is optional. Generated CMake falls back to normal FetchContent
-when a zap-managed sparse checkout is not present.`)
+	uiHelpSection("Dependencies")
+	uiHelpCommand("zap list", "", "Show project dependencies and selected targets")
+	uiHelpCommand("zap verify", "[--offline]", "Verify local copies and immutable remote locks")
+	uiHelpCommand("zap audit", "", "List literal external sources in build manifests")
+	uiHelpCommand("zap update", "<dep>", "Show available stable release tags")
+	uiHelpCommand("zap version", "<dep> <ref>", "Pin a dependency version/ref in zap.yml")
+	uiHelpCommand("zap add", "<dep> <target>", "Add a component and synchronise")
+	uiHelpCommand("zap remove", "<dep> <target>", "Remove a component and synchronise")
+
+	uiHelpSection("Tool")
+	uiHelpCommand("zap help", "", "Show this help")
+	uiHelpCommand("zap version-tool", "", "Show the installed Zap version")
+
+	uiHelpNote("Build and upload settings live in zap.yml; command-line flags override common workflow choices.")
+	uiHelpNote("Generated CMake falls back to normal FetchContent when a Zap-managed sparse checkout is absent.")
 }

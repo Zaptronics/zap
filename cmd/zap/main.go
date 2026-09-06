@@ -13,7 +13,9 @@ var version = "dev"
 func main() {
 	zap.Version = version
 	if err := zap.Run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "zap:", err)
+		zap.PrintError(os.Stderr, err)
+		fmt.Fprintln(os.Stderr)
 		os.Exit(1)
 	}
+	fmt.Fprintln(os.Stdout)
 }

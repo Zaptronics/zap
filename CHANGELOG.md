@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- add an interactive ANSI terminal presentation with boxed command/result summaries, coloured phase markers, warnings, hints, and status output;
+- preserve raw CMake/Ninja/west/Git/compiler streams so build diagnostics remain unchanged;
+- automatically disable styling when output is redirected, honour `NO_COLOR`, and support `ZAP_COLOR=always|auto|never`; and
+- enable Windows virtual-terminal processing directly when Zap is attached to a compatible console;
+- build signed-ready Windows, universal macOS, DEB, RPM, and portable release artifacts from native GitHub runners; and
+- add optional WinGet and Homebrew publishing plus release/code-signing documentation.
+
 ## 0.4.0
 
 - add `zap upload` (aliases `zap program` and `zap flash`) with all programmer/tool policy declared in `zap.yml`;
