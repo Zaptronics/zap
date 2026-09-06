@@ -8,33 +8,118 @@ CMake and Zephyr underneath.
 
 ## Install
 
+Zap is a single native executable. No Python, Node.js, .NET, JVM, or other
+runtime is required.
+
+### Download the latest release
+
+These links always follow the GitHub release currently marked **Latest**:
+
+| Platform | Download |
+| --- | --- |
+| Windows x64 (Intel/AMD) | [zap_windows_amd64.zip](https://github.com/Zaptronics/zap/releases/latest/download/zap_windows_amd64.zip) |
+| Windows ARM64 | [zap_windows_arm64.zip](https://github.com/Zaptronics/zap/releases/latest/download/zap_windows_arm64.zip) |
+| macOS Universal (Intel + Apple Silicon) | [zap_darwin_universal.zip](https://github.com/Zaptronics/zap/releases/latest/download/zap_darwin_universal.zip) |
+| Linux x64 portable | [zap_linux_amd64.tar.gz](https://github.com/Zaptronics/zap/releases/latest/download/zap_linux_amd64.tar.gz) |
+| Linux ARM64 portable | [zap_linux_arm64.tar.gz](https://github.com/Zaptronics/zap/releases/latest/download/zap_linux_arm64.tar.gz) |
+| Checksums | [SHA256SUMS.txt](https://github.com/Zaptronics/zap/releases/latest/download/SHA256SUMS.txt) |
+
+Versioned `.deb` and `.rpm` packages are available from the
+[Latest Release](https://github.com/Zaptronics/zap/releases/latest).
+
 ### Windows
+
+#### WinGet
+
+Once the Zap package has been accepted into the WinGet community repository,
+the preferred install will be:
 
 ```powershell
 winget install --id Zaptronics.Zap -e
 ```
 
+Until then, download the x64 or ARM64 ZIP above and place `zap.exe` somewhere on
+your `PATH`. For a per-user installation from PowerShell, after downloading the
+ZIP to your Downloads folder:
+
+```powershell
+$ZapDir = "$env:LOCALAPPDATA\Programs\Zap"
+New-Item -ItemType Directory -Force -Path $ZapDir | Out-Null
+Expand-Archive "$HOME\Downloads\zap_windows_amd64.zip" -DestinationPath $ZapDir -Force
+
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($UserPath -split ';') -notcontains $ZapDir) {
+    [Environment]::SetEnvironmentVariable("Path", ($UserPath.TrimEnd(';') + ";" + $ZapDir), "User")
+}
+$env:Path += ";$ZapDir"
+
+zap version-tool
+```
+
+For Windows on ARM, use `zap_windows_arm64.zip` instead.
+
 ### macOS
+
+Once the Zaptronics Homebrew tap is enabled, the preferred install will be:
 
 ```bash
 brew install --cask Zaptronics/tap/zap
 ```
 
-### Linux
-
-GitHub Releases provide native `.deb` and `.rpm` packages for AMD64 and ARM64.
-For example:
+For a manual install from the current GitHub release:
 
 ```bash
-sudo apt install ./zap_X.Y.Z_linux_amd64.deb
-# or
-sudo dnf install ./zap_X.Y.Z_linux_amd64.rpm
+curl -fL https://github.com/Zaptronics/zap/releases/latest/download/zap_darwin_universal.zip -o /tmp/zap.zip
+rm -rf /tmp/zap-install
+mkdir -p /tmp/zap-install
+unzip -q /tmp/zap.zip -d /tmp/zap-install
+sudo install -m 0755 /tmp/zap-install/zap /usr/local/bin/zap
+zap version-tool
 ```
 
-Portable ZIP/tar.gz downloads remain available from GitHub Releases. Zap is a
-single native executable; no PowerShell, Python, Node.js, .NET, or other runtime
-is required to run it. See `docs/RELEASE_DISTRIBUTION.md` for package publishing
-and release-maintainer setup.
+### Ubuntu / Debian
+
+Download the `.deb` for your architecture from the
+[Latest Release](https://github.com/Zaptronics/zap/releases/latest), then:
+
+```bash
+# Intel / AMD 64-bit
+sudo apt install ./zap_*_linux_amd64.deb
+
+# ARM64
+sudo apt install ./zap_*_linux_arm64.deb
+```
+
+### Fedora / RHEL
+
+Download the `.rpm` for your architecture from the
+[Latest Release](https://github.com/Zaptronics/zap/releases/latest), then:
+
+```bash
+# Intel / AMD 64-bit
+sudo dnf install ./zap_*_linux_amd64.rpm
+
+# ARM64
+sudo dnf install ./zap_*_linux_arm64.rpm
+```
+
+### Other Linux distributions
+
+Use the portable archive and install the single binary into `/usr/local/bin`:
+
+```bash
+# Intel / AMD 64-bit
+curl -fL https://github.com/Zaptronics/zap/releases/latest/download/zap_linux_amd64.tar.gz -o /tmp/zap.tar.gz
+
+# For ARM64, use zap_linux_arm64.tar.gz instead.
+tar -xzf /tmp/zap.tar.gz -C /tmp
+sudo install -m 0755 /tmp/zap /usr/local/bin/zap
+zap version-tool
+```
+
+After installation, `zap help` should work from a new shell. Release and
+publisher setup for maintainers is documented in
+`docs/RELEASE_DISTRIBUTION.md`.
 
 ## First project
 
