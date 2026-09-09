@@ -94,8 +94,44 @@ func safeRemoveBuildDir(projectRoot, buildPath string) error {
 	if build == filepath.Clean(vol+string(os.PathSeparator)) {
 		return fmt.Errorf("refusing to clean filesystem root %s", build)
 	}
-	if _, err := os.Stat(build); os.IsNotExist(err) {
-		return nil
+	buildInfo, err := os.Stat(build)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect build directory: %w", err)
+	}
+	// Resolve both sides: the project itself may have been opened through a
+	// symlink or Windows junction. This is a preflight check, not a race-proof
+	// filesystem capability; concurrent replacement remains outside this guard.
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("resolve project root before cleanup: %w", err)
+	}
+	resolvedBuild, err := filepath.EvalSymlinks(build)
+	if err != nil {
+		return fmt.Errorf("resolve build directory before cleanup: %w", err)
+	}
+	// Path spelling does not determine filesystem identity: macOS can have a
+	// case-insensitive volume even though filepath comparisons are case-sensitive.
+	// Compare the target with the project and every physical ancestor instead.
+	for ancestor := resolvedRoot; ; ancestor = filepath.Dir(ancestor) {
+		info, err := os.Stat(ancestor)
+		if err != nil {
+			return fmt.Errorf("inspect project ancestor before cleanup: %w", err)
+		}
+		if os.SameFile(buildInfo, info) {
+			return fmt.Errorf("refusing to clean %s because it identifies the project root or ancestor %s", build, ancestor)
+		}
+		if filepath.Dir(ancestor) == ancestor {
+			break
+		}
+	}
+	if rel, err := filepath.Rel(resolvedBuild, resolvedRoot); err == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("refusing to clean %s because its resolved path contains the project root %s", build, resolvedRoot)
+	}
+	if resolvedBuild == filepath.Clean(filepath.VolumeName(resolvedBuild)+string(os.PathSeparator)) {
+		return fmt.Errorf("refusing to clean filesystem root alias %s", build)
 	}
 	uiStep("Clean", build)
 	return os.RemoveAll(build)

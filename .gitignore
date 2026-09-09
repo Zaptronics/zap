@@ -1,5 +1,5 @@
 /zap
-/zap.exe
+/*.exe
 /dist/
 /stage/
 *.test

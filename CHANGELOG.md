@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### 0.6.4 — filesystem-identity cleanup checks
+
+- compare cleanup targets against the actual filesystem identities of the project root and every resolved ancestor, addressing the macOS case-alias deletion reported by CI;
+- retain path and symlink/junction checks, and fail closed if an ancestor cannot be inspected; and
+- extend case-alias regression coverage to parent/grandparent directories and preserve distinct case-sensitive sibling directories as valid cleanup targets. Native macOS confirmation requires the next CI run; concurrent filesystem replacement remains outside this protection.
+
+### 0.6.3 — GitHub Actions runtime and cache configuration
+
+- update CI and release workflows to actions/checkout v7 and actions/setup-go v7, which declare the Node 24 action runtime; and
+- explicitly key the Go cache from go.mod, avoiding the missing-go.sum warning in this standard-library-only module.
+
+These changes address workflow warnings. The separate macOS cleanup failure was subsequently diagnosed and addressed in 0.6.4.
+
+### 0.6.2 — visible Git protection
+
+- warn on stderr when inherited Git repository selectors are removed, naming each variable once per invocation without exposing its value; no override is provided;
+- resolve the cleanup test's temporary-directory path before checking fixture containment, including macOS temporary-directory aliases; and
+- expose regression test results in the existing Windows/Linux/macOS CI matrix. Local Windows results do not establish Linux/macOS runtime success.
+
+### 0.6.1 — repository and cleanup boundaries
+
+- discard inherited Git repository, worktree, common-directory, index, and object-directory selectors in Zap's Git subprocesses;
+- resolve symlink/junction aliases before cleanup and reject resolved project roots, ancestors, and filesystem roots;
+- fail cleanup when existing paths cannot be inspected or resolved; and
+- add disposable-repository and symlink/junction regression tests. Concurrent filesystem replacement, Git hooks/filters, and subprocess timeouts remain follow-up work.
+
 ### 0.6.0 — security review follow-up
 
 Continues from the supplied 0.5.1 source baseline.

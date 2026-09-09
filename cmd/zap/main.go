@@ -8,7 +8,7 @@ import (
 	zap "github.com/Zaptronics/zap/internal/zap"
 )
 
-var version = "0.6.0"
+var version = "0.6.4"
 
 func main() {
 	zap.Version = version

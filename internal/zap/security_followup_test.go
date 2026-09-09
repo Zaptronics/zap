@@ -56,6 +56,77 @@ func TestCleanProtectsProjectCaseAlias(t *testing.T) {
 	}
 }
 
+func TestCleanProtectsProjectAncestorCaseAlias(t *testing.T) {
+	for _, depth := range []string{"parent", "grandparent"} {
+		t.Run(depth, func(t *testing.T) {
+			fixture := t.TempDir()
+			ancestor := filepath.Join(fixture, "MixedCaseAncestor")
+			alias := filepath.Join(fixture, "mixedcaseancestor")
+			root := filepath.Join(ancestor, "project")
+			if depth == "grandparent" {
+				root = filepath.Join(ancestor, "intermediate", "project")
+			}
+			if err := os.MkdirAll(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(root, "source.txt")
+			if err := os.WriteFile(marker, []byte("keep"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			a, err := os.Stat(alias)
+			if os.IsNotExist(err) {
+				t.Skip("filesystem is case-sensitive")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := os.Stat(ancestor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !os.SameFile(a, b) {
+				t.Fatal("fixture paths are not aliases")
+			}
+			// The destructive target is a child of our disposable fixture.
+			rel, err := filepath.Rel(fixture, alias)
+			if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+				t.Fatal("unsafe fixture")
+			}
+			if err := safeRemoveBuildDir(root, alias); err == nil {
+				t.Error("accepted project ancestor alias")
+			}
+			if _, err := os.Stat(marker); err != nil {
+				t.Error("deleted disposable project source")
+			}
+		})
+	}
+}
+
+func TestCleanAllowsDistinctCaseSensitiveSibling(t *testing.T) {
+	fixture := t.TempDir()
+	root, build := filepath.Join(fixture, "MixedCaseProject"), filepath.Join(fixture, "mixedcaseproject")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(build); err == nil {
+		t.Skip("filesystem is case-insensitive")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(build, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := safeRemoveBuildDir(root, build); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(build); !os.IsNotExist(err) {
+		t.Fatal("distinct build directory was not removed")
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Fatal("project was removed")
+	}
+}
+
 func TestDuplicateURIWithTrailingColon(t *testing.T) {
 	for _, document := range []string{"project", "package", "lock"} {
 		t.Run(document, func(t *testing.T) {

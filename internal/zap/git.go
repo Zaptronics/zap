@@ -11,7 +11,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
+
+// Warn once per variable per process; a single command may launch Git many times.
+var warnedGitSelectors sync.Map
 
 func isGitProgram(program string) bool {
 	base := strings.ToLower(filepath.Base(program))
@@ -20,12 +24,22 @@ func isGitProgram(program string) bool {
 
 func sanitizedGitEnv(env []string) []string {
 	out := make([]string, 0, len(env)+1)
+	var ignored []string
 	for _, entry := range env {
 		key := entry
 		if i := strings.IndexByte(entry, '='); i >= 0 {
 			key = entry[:i]
 		}
 		upper := strings.ToUpper(key)
+		// Zap selects each dependency repository explicitly. Do not let a parent
+		// Git process redirect its worktree, index, or object database elsewhere.
+		switch upper {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES":
+			if _, alreadyWarned := warnedGitSelectors.LoadOrStore(upper, true); !alreadyWarned {
+				ignored = append(ignored, upper)
+			}
+			continue
+		}
 		if upper == "GIT_CONFIG_COUNT" || upper == "GIT_CONFIG_PARAMETERS" || strings.HasPrefix(upper, "GIT_CONFIG_KEY_") || strings.HasPrefix(upper, "GIT_CONFIG_VALUE_") {
 			continue
 		}
@@ -34,6 +48,10 @@ func sanitizedGitEnv(env []string) []string {
 	// Prevent process-injected config pairs (for example url.*.insteadOf) from
 	// silently changing the transport selected by a validated source URI.
 	out = append(out, "GIT_CONFIG_COUNT=0")
+	if len(ignored) > 0 {
+		sort.Strings(ignored)
+		fmt.Fprintf(os.Stderr, "Warning: Zap ignored %s because these variables can redirect dependency operations to another repository, index, or object store. This protection cannot be disabled.\n", strings.Join(ignored, ", "))
+	}
 	return out
 }
 

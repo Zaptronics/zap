@@ -41,7 +41,11 @@ behaviour in the private report.
 - Git status verification disables `core.fsmonitor` so checkout-controlled fsmonitor
   hooks are not executed by that check. Zap also strips process-injected
   `GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS` and their key/value entries from Git
-  subprocesses.
+  subprocesses. It also removes inherited `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`,
+  `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` so
+  these selectors cannot redirect Zap's explicitly selected dependency repository.
+  When present, their names are reported on stderr once per variable per invocation;
+  values are never included in this warning. This protection has no override.
 - Offline verification keeps the local Git/path checks and skips remote lookups. It
   rejects URL dependencies because Zap cannot independently verify their local extracted
   content. `zap make --offline` requires the managed sources to already exist.
@@ -51,7 +55,11 @@ behaviour in the private report.
 - Remote package manifests cannot define project-level upload policy. Names, component
   references and sparse source paths are validated before generation.
 - `zap make --clean` refuses to delete the project root, filesystem roots, and lexical
-  ancestors that contain the project root. Lockfile replacement uses a unique temporary
+  ancestors that contain the project root. It also checks resolved paths for symlink
+  and junction aliases, and compares filesystem identities against the project root
+  and every resolved ancestor before deletion. This respects case-insensitive volumes
+  on macOS as well as Windows. These checks do not prevent concurrent path
+  replacement. Lockfile replacement uses a unique temporary
   file in the destination directory, and volume-copy avoids truncating a file by copying
   it onto itself.
 - Release workflow source passes the Git tag to PowerShell through an environment
@@ -74,7 +82,8 @@ content-identity problem.
 ### Git execution is only partially isolated
 
 Zap removes process-injected Git config pairs used by `GIT_CONFIG_COUNT`/
-`GIT_CONFIG_PARAMETERS`, but repository and global Git configuration, other Git-related
+`GIT_CONFIG_PARAMETERS` and the repository selectors listed above, but repository and
+global Git configuration, other Git-related
 environment variables, the Git executable, credential helpers, transport configuration,
 filters and checkout behaviour remain part of the trusted local environment. A complete
 hardened Git object-reading sandbox is not implemented.

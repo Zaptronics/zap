@@ -13,10 +13,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.27.x'
+          cache-dependency-path: go.mod
       - name: Validate release tag
         shell: bash
         env:
@@ -38,10 +39,11 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.27.x'
+          cache-dependency-path: go.mod
 
       - name: Set release version
         shell: pwsh
@@ -106,10 +108,11 @@ jobs:
     runs-on: macos-latest
     environment: release-signing
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.27.x'
+          cache-dependency-path: go.mod
 
       - name: Build universal macOS binary
         shell: bash
@@ -179,10 +182,11 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.27.x'
+          cache-dependency-path: go.mod
 
       - name: Build Linux binary
         shell: bash
