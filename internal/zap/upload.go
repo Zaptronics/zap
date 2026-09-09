@@ -437,6 +437,17 @@ func resolveUploadFind(spec *UploadFindConfig, vars map[string]string) (string, 
 }
 
 func copyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if dstInfo, err := os.Stat(dst); err == nil {
+		if os.SameFile(srcInfo, dstInfo) {
+			return nil
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return err

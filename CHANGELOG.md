@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### 0.6.0 — security review follow-up
+
+Continues from the supplied 0.5.1 source baseline.
+
+- reject differently cased Windows aliases of the project root during build cleanup;
+- reject duplicate dependency fields even when a scalar value ends in a colon, while preserving namespaced component names;
+- replace references to missing validation scripts with runnable Go commands; and
+- add regression coverage for these cleanup and metadata-validation cases.
+
+### Other unreleased work
+
+- add schema-5 intent-only dependency manifests with deterministic `zap.lock` resolution and automatic migration of legacy in-manifest Git commit locks;
+- add semantic-version constraints (`^`, `~`, explicit ranges), explicit Git tag/ref/commit constraints, and local path dependencies;
+- add `zap-package.yml` schema 2 transitive package dependencies with one-version graph resolution, conflict diagnostics, cycle detection and manifest integrity hashes;
+- make `zap add`/`zap remove` manage direct dependencies, move component selection to `zap component add/remove`, and retain deprecated compatibility aliases;
+- make `zap update` deliberately advance lockfile resolutions within declared constraints, and add `zap outdated` and `zap tree --why`; and
+- make generation, status and verification consume the complete locked dependency graph rather than only direct `zap.yml` entries.
 - add an interactive ANSI terminal presentation with boxed command/result summaries, coloured phase markers, warnings, hints, and status output;
 - preserve raw CMake/Ninja/west/Git/compiler streams so build diagnostics remain unchanged;
 - automatically disable styling when output is redirected, honour `NO_COLOR`, and support `ZAP_COLOR=always|auto|never`; and

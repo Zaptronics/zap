@@ -36,7 +36,59 @@ func boolScalar(s string) bool {
 	return s == "1" || s == "true" || s == "yes" || s == "on" || s == "y"
 }
 
+func rejectDuplicateMappingKeys(text, document string) error {
+	s := bufio.NewScanner(strings.NewReader(text))
+	s.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	parents := map[int]string{}
+	seen := map[string]int{}
+	lineNo := 0
+	for s.Scan() {
+		lineNo++
+		raw := strings.TrimSuffix(s.Text(), "\r")
+		t := strings.TrimSpace(raw)
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "- ") {
+			continue
+		}
+		indent := len(raw) - len(strings.TrimLeft(raw, " "))
+		key := ""
+		// Named dependency/component blocks consume the final colon; scalar
+		// settings consume the first colon even when their value ends in one.
+		if indent == 2 && (parents[0] == "dependencies" || parents[0] == "components") && strings.HasSuffix(t, ":") {
+			key = strings.TrimSpace(strings.TrimSuffix(t, ":"))
+		} else if k, _, ok := splitKV(t); ok {
+			key = k
+		}
+		if key == "" {
+			continue
+		}
+		for level := range parents {
+			if level >= indent {
+				delete(parents, level)
+			}
+		}
+		parts := make([]string, 0, indent/2+1)
+		for level := 0; level < indent; level += 2 {
+			if parent, ok := parents[level]; ok {
+				parts = append(parts, parent)
+			}
+		}
+		id := strings.Join(parts, "\x00") + "\x00" + key
+		if previous, ok := seen[id]; ok {
+			return fmt.Errorf("%s line %d repeats mapping key %q previously set on line %d", document, lineNo, key, previous)
+		}
+		seen[id] = lineNo
+		parents[indent] = key
+	}
+	if err := s.Err(); err != nil {
+		return fmt.Errorf("scan %s for duplicate mapping keys: %w", document, err)
+	}
+	return nil
+}
+
 func ParseConfig(text string) (*Config, error) {
+	if err := rejectDuplicateMappingKeys(text, "zap.yml"); err != nil {
+		return nil, err
+	}
 	cfg := &Config{Schema: ConfigSchema, Dependencies: map[string]*DependencyConfig{}, Upload: UploadConfig{Methods: map[string]*UploadMethodConfig{}}}
 	section := ""
 	currentDep := ""
@@ -506,9 +558,6 @@ func FormatConfig(cfg *Config) string {
 		if dep.Version != "" {
 			fmt.Fprintf(&b, "    version: %s\n", yamlQuote(dep.Version))
 		}
-		if dep.Commit != "" {
-			fmt.Fprintf(&b, "    commit: %s\n", yamlQuote(dep.Commit))
-		}
 		if dep.Hash != "" {
 			fmt.Fprintf(&b, "    hash: %s\n", yamlQuote(dep.Hash))
 		}
@@ -533,8 +582,11 @@ func FormatConfig(cfg *Config) string {
 }
 
 func ParsePackageManifest(text string) (*PackageManifest, error) {
-	m := &PackageManifest{Schema: PackageSchema, Components: map[string]*PackageComponent{}}
-	section, currentComponent, currentList := "", "", ""
+	if err := rejectDuplicateMappingKeys(text, "zap-package.yml"); err != nil {
+		return nil, err
+	}
+	m := &PackageManifest{Schema: PackageSchema, Dependencies: map[string]*PackageDependency{}, Components: map[string]*PackageComponent{}}
+	section, currentDependency, currentComponent, currentList := "", "", "", ""
 	s := bufio.NewScanner(strings.NewReader(text))
 	lineNo := 0
 	for s.Scan() {
@@ -548,15 +600,19 @@ func ParsePackageManifest(text string) (*PackageManifest, error) {
 			return nil, fmt.Errorf("zap-package.yml line %d uses odd indentation", lineNo)
 		}
 		t := strings.TrimSpace(raw)
-		if indent == 0 && t == "package:" {
-			section, currentComponent, currentList = "package", "", ""
-			continue
-		}
-		if indent == 0 && t == "components:" {
-			section, currentComponent, currentList = "components", "", ""
-			continue
-		}
 		if indent == 0 {
+			currentDependency, currentComponent, currentList = "", "", ""
+			switch t {
+			case "package:":
+				section = "package"
+				continue
+			case "dependencies:":
+				section = "dependencies"
+				continue
+			case "components:":
+				section = "components"
+				continue
+			}
 			k, v, ok := splitKV(t)
 			if !ok || k != "schema" {
 				return nil, fmt.Errorf("invalid top-level package manifest line %d", lineNo)
@@ -596,6 +652,53 @@ func ParsePackageManifest(text string) (*PackageManifest, error) {
 			}
 			if indent == 4 && strings.HasPrefix(t, "- ") && currentList == "package.paths" {
 				m.Package.Paths = append(m.Package.Paths, scalar(strings.TrimSpace(strings.TrimPrefix(t, "- "))))
+				continue
+			}
+		}
+		if section == "dependencies" {
+			if indent == 2 && strings.HasSuffix(t, ":") {
+				name := strings.TrimSpace(strings.TrimSuffix(t, ":"))
+				if name == "" {
+					return nil, fmt.Errorf("empty package dependency name on line %d", lineNo)
+				}
+				m.Dependencies[name] = &PackageDependency{Type: "git"}
+				m.DependencyOrder = append(m.DependencyOrder, name)
+				currentDependency, currentList = name, ""
+				continue
+			}
+			if currentDependency == "" {
+				return nil, fmt.Errorf("package dependency setting before dependency name on line %d", lineNo)
+			}
+			d := m.Dependencies[currentDependency]
+			if indent == 4 {
+				k, v, ok := splitKV(t)
+				if !ok {
+					return nil, fmt.Errorf("invalid package dependency setting on line %d", lineNo)
+				}
+				if k == "components" {
+					if v != "" {
+						return nil, fmt.Errorf("package dependency components must be a list on line %d", lineNo)
+					}
+					currentList = "dependency.components"
+					continue
+				}
+				switch k {
+				case "type":
+					d.Type = v
+				case "uri":
+					d.URI = v
+				case "version":
+					d.Version = v
+				case "zephyr_module":
+					d.ZephyrModule = boolScalar(v)
+				default:
+					return nil, fmt.Errorf("unknown package dependency key %q on line %d", k, lineNo)
+				}
+				currentList = ""
+				continue
+			}
+			if indent == 6 && strings.HasPrefix(t, "- ") && currentList == "dependency.components" {
+				d.Components = append(d.Components, scalar(strings.TrimSpace(strings.TrimPrefix(t, "- "))))
 				continue
 			}
 		}
@@ -660,8 +763,8 @@ func ParsePackageManifest(text string) (*PackageManifest, error) {
 	if err := s.Err(); err != nil {
 		return nil, err
 	}
-	if m.Schema != PackageSchema {
-		return nil, fmt.Errorf("unsupported zap-package.yml schema %d", m.Schema)
+	if m.Schema < 1 || m.Schema > PackageSchema {
+		return nil, fmt.Errorf("unsupported zap-package.yml schema %d; this zap supports schemas 1 through %d", m.Schema, PackageSchema)
 	}
 	m.normalize()
 	if err := validatePackageManifest(m); err != nil {

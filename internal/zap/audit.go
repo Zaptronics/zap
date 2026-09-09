@@ -34,9 +34,12 @@ func scanExternalSources(root string, proposed ...externalSource) ([]externalSou
 	addFile(filepath.Join(root, "zephyr", "module.yml"))
 
 	cmakeDir := filepath.Join(root, "cmake")
-	_ = filepath.WalkDir(cmakeDir, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(cmakeDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
 		}
 		if d.IsDir() {
 			return nil
@@ -45,16 +48,19 @@ func scanExternalSources(root string, proposed ...externalSource) ([]externalSou
 			files[path] = true
 		}
 		return nil
-	})
+	}); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("scan cmake directory: %w", err)
+	}
 
 	seen := map[string]bool{}
 	var out []externalSource
 	for path := range files {
 		f, err := os.Open(path)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("scan external sources: open %s: %w", path, err)
 		}
 		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
 			foundLiteral := false
@@ -81,7 +87,13 @@ func scanExternalSources(root string, proposed ...externalSource) ([]externalSou
 				}
 			}
 		}
-		_ = f.Close()
+		if err := scanner.Err(); err != nil {
+			_ = f.Close()
+			return nil, fmt.Errorf("scan external sources: read %s: %w", path, err)
+		}
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("scan external sources: close %s: %w", path, err)
+		}
 	}
 	out = append(out, proposed...)
 	sort.Slice(out, func(i, j int) bool {

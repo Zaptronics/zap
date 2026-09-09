@@ -322,11 +322,15 @@ func (p *Project) ConfigureWithOptions(c *Config, o ConfigureOptions) error {
 			return fmt.Errorf("Zephyr projects require project.board in zap.yml")
 		}
 		args := []string{"build", "-b", board, "-d", buildPath, "--cmake-only", p.Root}
+		lock, err := p.lockForGeneration(c)
+		if err != nil {
+			return err
+		}
 		var modulePaths []string
-		for _, name := range c.DependencyOrder {
-			d := c.Dependencies[name]
+		for _, name := range lock.DependencyOrder {
+			d := lock.Dependencies[name]
 			if d != nil && d.ZephyrModule {
-				modulePaths = append(modulePaths, p.dependencyPath(c, name, d))
+				modulePaths = append(modulePaths, p.dependencyPathLocked(c, name, d))
 			}
 		}
 		var ca []string

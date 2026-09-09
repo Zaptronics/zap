@@ -1,0 +1,170 @@
+[
+  {
+    "path": ".github/workflows/release.yml",
+    "sha256": "e2e433bb06cdec001482b133538aa5bf8d823142657479f74dbfbe1290e53dfd"
+  },
+  {
+    "path": ".github/workflows/ci.yml",
+    "sha256": "8198b2e4ec48b8b8c91643d40fefa0991a4c872e4106200a1b6ab5878585c964"
+  },
+  {
+    "path": "cmd/zap/main.go",
+    "sha256": "b512b780a74b8abc18031e5df34143a4cca9ece62ea638bd5d1a4fb8ee0529c5"
+  },
+  {
+    "path": "internal/zap/yaml_test.go",
+    "sha256": "b1e4eee26619501cc7be01a1584c03635478879459bca250211bbbf801dbcb02"
+  },
+  {
+    "path": "internal/zap/yaml.go",
+    "sha256": "bda238bddb534eb60600c05f9ffdf103956a180ff4940c474067a31c43cc32f3"
+  },
+  {
+    "path": "internal/zap/volume_windows.go",
+    "sha256": "da9da1af078c290a744b11cb5b34d6e91f52a0acd01b2c3566975e5e9c4be42c"
+  },
+  {
+    "path": "internal/zap/volume_unix.go",
+    "sha256": "68a11c431a72aa3acfeab8c1e8f7bcb59fd83a3705f8211fec30138c041b22ee"
+  },
+  {
+    "path": "internal/zap/verify.go",
+    "sha256": "716c0f74c22c0bf9958e50a6869e674bfe75f5bed9aeaff9e5ab0949668ba2c6"
+  },
+  {
+    "path": "internal/zap/upload_test.go",
+    "sha256": "9bc0016f55f87f1e039405c0dbfc585b3aa550d1ae3881f49a110bd791f7de1c"
+  },
+  {
+    "path": "internal/zap/upload.go",
+    "sha256": "2b2016bc3dd8cd2c51c684fc6b8008ec2123a6ba28e31d6be1d9e03f81a02ec8"
+  },
+  {
+    "path": "internal/zap/ui_test.go",
+    "sha256": "e5582e2810f9561e30018ee5b95139648953736ec5aa73d9e8a36a7ebbae57a4"
+  },
+  {
+    "path": "internal/zap/ui.go",
+    "sha256": "a3ef5dd401ccb6156e2de0daad695784041b4eeaaa0bca1216243d4217cd0cb6"
+  },
+  {
+    "path": "internal/zap/terminal_windows.go",
+    "sha256": "25f35244bcd2341936481142a819458bb3d1683d92fd0e1b2a1643cf7fbd3296"
+  },
+  {
+    "path": "internal/zap/terminal_unix.go",
+    "sha256": "48df4c854af547dc19624df285ab76b8f04f8713b7ce49bea0e60ab48a7ac82c"
+  },
+  {
+    "path": "internal/zap/semver.go",
+    "sha256": "1968a1769e65fe755f47f76ec63dfad82446064bf06239f68e95cb07d2550eae"
+  },
+  {
+    "path": "internal/zap/security_test.go",
+    "sha256": "225c10a851b35828563c16fe8babbcd38c5e1f21d0da91e36c7205568e66a95f"
+  },
+  {
+    "path": "internal/zap/security.go",
+    "sha256": "ac8aa7bfe55aa05c740e9a50cc66117d3f244060026e3e9187d068a16ff4fdad"
+  },
+  {
+    "path": "internal/zap/resolver_test.go",
+    "sha256": "23f8dce90be7614d352e14ff71466e946e6bb1aa9315049f0f90babdfe84929c"
+  },
+  {
+    "path": "internal/zap/resolver.go",
+    "sha256": "b4204bcd4e8ec314e395b4d0060cacbd8230ec6f4859912b4c5a8507d2384935"
+  },
+  {
+    "path": "internal/zap/project.go",
+    "sha256": "0432ff2b50e9b12f4ce0d04c4813f7191bbc00dcc21ffeb28307b1486c4d2d99"
+  },
+  {
+    "path": "internal/zap/owasp_test.go",
+    "sha256": "2295489c9e5d5d872393f9f18b881c02e781bbc3725869b6572f3ab9b86d1094"
+  },
+  {
+    "path": "internal/zap/model.go",
+    "sha256": "c0d6c9a8b666ad33ce4af4cbdd332da742a4854d8c280cef0662a8b021200e80"
+  },
+  {
+    "path": "internal/zap/make_test.go",
+    "sha256": "8cc08394c6dd2e424fbb11edcbb9cad5870f16ede17024a2b8296da0a0744c96"
+  },
+  {
+    "path": "internal/zap/make.go",
+    "sha256": "f09321d13724bf6f800cd39f0acdbfa5ed6c0b8677e6ca0ae06295e0dd63a1fd"
+  },
+  {
+    "path": "internal/zap/lock.go",
+    "sha256": "94335553c29b7b96e653e0c41d0444dc9ce79aef33cedc06e11b9616872bc509"
+  },
+  {
+    "path": "internal/zap/init.go",
+    "sha256": "3cfe2f3f16582b769d5e50c8a6a3bfdafd2e2246649c1f76651f50e8485a01ec"
+  },
+  {
+    "path": "internal/zap/git_integration_test.go",
+    "sha256": "a1b48b3b6ccca4fba2bcc783bde425ea07d87c2b1442bd95e8ce42e20c48e961"
+  },
+  {
+    "path": "internal/zap/git.go",
+    "sha256": "23acb9e72c47863167564f1dae79bf77d864cd6e60d17496f5a7a68235eb5008"
+  },
+  {
+    "path": "internal/zap/deps_commands_test.go",
+    "sha256": "fd04f9160d0333bd347d1912f2f169856e827a8dff1a928c95026e32de9f7900"
+  },
+  {
+    "path": "internal/zap/deps_commands.go",
+    "sha256": "1bf7c61ccb7a9e0bf5e35160c310967451054cc66c3c86bb4cbb5b5f5191a8cc"
+  },
+  {
+    "path": "internal/zap/configure.go",
+    "sha256": "ff3eb28541d626c5726233b739f7948ee7523b4752ba595981a43b76821516f0"
+  },
+  {
+    "path": "internal/zap/cmake_test.go",
+    "sha256": "b99c537eb7592bf8ce502b540d1c95ec4b6edccd9a083f92a0c6c28e79352408"
+  },
+  {
+    "path": "internal/zap/cmake_integration_test.go",
+    "sha256": "b9659e02f8c5e0f62a231f22e0740e9604cab208da25a586b2edae27a619adfc"
+  },
+  {
+    "path": "internal/zap/cmake.go",
+    "sha256": "b86328301a939e8a3b4890f97c5a09abe2d62a7ebb40b7ec2ad11b868e18783a"
+  },
+  {
+    "path": "internal/zap/cli.go",
+    "sha256": "0753bb1a6dffbbf9443dda72f5ccde457b16db820f6ee0eecf3a4e4203e35241"
+  },
+  {
+    "path": "internal/zap/claims_test.go",
+    "sha256": "136d20db0174e9ac4f92901e976612f50467d736be0efed143c17453fd3fff63"
+  },
+  {
+    "path": "internal/zap/audit_test.go",
+    "sha256": "1aaba30cc44ada810aa69fcf4b1b37ac7cfa3c9f37010c614a14a45d9ae27205"
+  },
+  {
+    "path": "internal/zap/audit.go",
+    "sha256": "7096fb60c08e279fc82e519c5693bcd5c5e0370afa4f817270200fa7198abf60"
+  },
+  {
+    "path": "internal/zap/adapter.go",
+    "sha256": "adfa7efa6e94f556fad64641191ac3a66fdd0389c807130e7dbdc0262f1a46f4"
+  },
+  {
+    "path": "go.mod",
+    "sha256": "579c183d5b0235b6bc895dc349f91189a3ffce3385862a69b52148b1a4e4eca5"
+  },
+  {
+    "path": "SECURITY.md",
+    "sha256": "2cad7e8abedbf14cb755743f71d0d9909d8a633fd6f2fd28d4fec886c874d834"
+  },
+  {
+    "path": "README.md",
+    "sha256": "145811983092c19126fb62126f76bf8133402938615fcc17ed2c7e977faff622"
+  }
+]

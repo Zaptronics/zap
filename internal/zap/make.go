@@ -87,6 +87,9 @@ func safeRemoveBuildDir(projectRoot, buildPath string) error {
 	if build == root {
 		return fmt.Errorf("refusing to clean project root %s", root)
 	}
+	if rel, err := filepath.Rel(build, root); err == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("refusing to clean %s because it contains the project root %s", build, root)
+	}
 	vol := filepath.VolumeName(build)
 	if build == filepath.Clean(vol+string(os.PathSeparator)) {
 		return fmt.Errorf("refusing to clean filesystem root %s", build)

@@ -20,9 +20,10 @@ For a tag `vX.Y.Z`, GitHub Releases receives:
 - `SHA256SUMS.txt`
 
 The DEB and RPM packages install `zap` into `/usr/bin`, so no manual PATH
-editing is required. The workflow runs the pinned nFPM `v2.47.0` container for
-packaging, keeping nFPM's own Go/toolchain requirements separate from Zap's Go
-1.22 build toolchain.
+editing is required. The workflow currently uses the nFPM `v2.47.0` image tag for packaging, keeping
+nFPM's own Go/toolchain requirements separate from Zap's Go 1.27 build toolchain.
+The image is version-tagged but not yet pinned by digest; see `SECURITY.md` for the
+remaining release supply-chain hardening work.
 
 The macOS archive contains one universal binary supporting Intel and Apple
 Silicon.
@@ -206,13 +207,16 @@ update`.
 
 ## Creating a release
 
-Before tagging:
+Before tagging, run the release/current security gate:
 
 ```powershell
 git pull --rebase
-go test ./...
+.\scripts\test-claims.ps1
 git status
 ```
+
+The release workflow accepts stable tags in `vMAJOR.MINOR.PATCH` form. Roadmap claim
+probes are intentionally separate and are not a substitute for the release gate.
 
 Then:
 

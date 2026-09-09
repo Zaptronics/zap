@@ -10,9 +10,38 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
+
+func isGitProgram(program string) bool {
+	base := strings.ToLower(filepath.Base(program))
+	return base == "git" || base == "git.exe"
+}
+
+func sanitizedGitEnv(env []string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		key := entry
+		if i := strings.IndexByte(entry, '='); i >= 0 {
+			key = entry[:i]
+		}
+		upper := strings.ToUpper(key)
+		if upper == "GIT_CONFIG_COUNT" || upper == "GIT_CONFIG_PARAMETERS" || strings.HasPrefix(upper, "GIT_CONFIG_KEY_") || strings.HasPrefix(upper, "GIT_CONFIG_VALUE_") {
+			continue
+		}
+		out = append(out, entry)
+	}
+	// Prevent process-injected config pairs (for example url.*.insteadOf) from
+	// silently changing the transport selected by a validated source URI.
+	out = append(out, "GIT_CONFIG_COUNT=0")
+	return out
+}
+
+var credentialURLRE = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)([^/@\s]+)@`)
+
+func redactSensitiveText(text string) string {
+	return credentialURLRE.ReplaceAllString(text, `${1}<redacted>@`)
+}
 
 func runStreaming(dir, program string, args ...string) error {
 	return runStreamingEnv(dir, nil, program, args...)
@@ -26,8 +55,12 @@ func runStreamingEnv(dir string, extraEnv []string, program string, args ...stri
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
+	if len(extraEnv) > 0 || isGitProgram(program) {
+		env := append(os.Environ(), extraEnv...)
+		if isGitProgram(program) {
+			env = sanitizedGitEnv(env)
+		}
+		cmd.Env = env
 	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s failed: %w", program, err)
@@ -40,15 +73,19 @@ func runCapture(dir, program string, args ...string) (string, error) {
 	if dir != "" {
 		cmd.Dir = dir
 	}
+	if isGitProgram(program) {
+		cmd.Env = sanitizedGitEnv(os.Environ())
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
+		msg := redactSensitiveText(strings.TrimSpace(errb.String()))
+		safeArgs := redactSensitiveText(strings.Join(args, " "))
 		if msg != "" {
-			return "", fmt.Errorf("%s %s failed: %s", program, strings.Join(args, " "), msg)
+			return "", fmt.Errorf("%s %s failed: %s", program, safeArgs, msg)
 		}
-		return "", fmt.Errorf("%s %s failed: %w", program, strings.Join(args, " "), err)
+		return "", fmt.Errorf("%s %s failed: %w", program, safeArgs, err)
 	}
 	return strings.TrimSpace(out.String()), nil
 }
@@ -62,7 +99,7 @@ func findProgram(name string) (string, error) {
 }
 
 func gitClean(git, path string) (bool, string, error) {
-	out, err := runCapture("", git, "-C", path, "status", "--porcelain", "--untracked-files=normal")
+	out, err := runCapture("", git, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", path, "status", "--porcelain", "--untracked-files=normal")
 	if err != nil {
 		return false, "", err
 	}
@@ -112,6 +149,9 @@ func ensureGitRepo(git, name, path, uri string) error {
 }
 
 func fetchRevision(git, name, path, uri, revision string) (string, error) {
+	if err := validateSourceURI("git", uri); err != nil {
+		return "", err
+	}
 	if revision == "" {
 		return "", fmt.Errorf("dependency %q has no version/ref", name)
 	}
@@ -230,56 +270,32 @@ func loadRemotePackageManifestLocked(git, uri, revision string) (*PackageManifes
 	return m, strings.ToLower(strings.TrimSpace(sha)), nil
 }
 
-type semVersion struct {
-	major, minor, patch int
-	raw                 string
-}
-
-var semverRE = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
-
-func parseSemver(s string) (semVersion, bool) {
-	m := semverRE.FindStringSubmatch(s)
-	if m == nil {
-		return semVersion{}, false
-	}
-	a, _ := strconv.Atoi(m[1])
-	b, _ := strconv.Atoi(m[2])
-	c, _ := strconv.Atoi(m[3])
-	return semVersion{a, b, c, s}, true
-}
 func listStableTags(git, uri string) ([]string, error) {
+	if err := validateSourceURI("git", uri); err != nil {
+		return nil, err
+	}
 	out, err := runCapture("", git, "ls-remote", "--tags", "--refs", uri)
 	if err != nil {
 		return nil, err
 	}
-	var vv []semVersion
+	var tags []string
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
 		if len(f) < 2 {
 			continue
 		}
 		tag := strings.TrimPrefix(f[1], "refs/tags/")
-		if v, ok := parseSemver(tag); ok {
-			vv = append(vv, v)
+		if _, ok := parseSemver(tag); ok {
+			tags = append(tags, tag)
 		}
 	}
-	sort.Slice(vv, func(i, j int) bool {
-		if vv[i].major != vv[j].major {
-			return vv[i].major > vv[j].major
-		}
-		if vv[i].minor != vv[j].minor {
-			return vv[i].minor > vv[j].minor
-		}
-		return vv[i].patch > vv[j].patch
-	})
-	r := make([]string, len(vv))
-	for i, v := range vv {
-		r[i] = v.raw
-	}
-	return r, nil
+	return sortStableTags(tags), nil
 }
 
 func resolveRemoteRef(git, uri, revision string) (string, error) {
+	if err := validateSourceURI("git", uri); err != nil {
+		return "", err
+	}
 	if gitCommitRE.MatchString(revision) {
 		return strings.ToLower(revision), nil
 	}
@@ -310,4 +326,25 @@ func resolveRemoteRef(git, uri, revision string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("Git ref %q was not found at %s", revision, uri)
+}
+
+func fetchCommitForLock(git, name, path, uri, resolved, commit string) error {
+	if err := validateSourceURI("git", uri); err != nil {
+		return err
+	}
+	commit = strings.ToLower(strings.TrimSpace(commit))
+	if !gitCommitRE.MatchString(commit) {
+		return fmt.Errorf("dependency %q has invalid locked commit %q", name, commit)
+	}
+	if _, err := runCapture("", git, "-C", path, "fetch", "--depth=1", "--force", "origin", commit); err == nil {
+		return nil
+	}
+	if resolved != "" && !strings.HasPrefix(strings.ToLower(resolved), "commit:") {
+		if _, err := runCapture("", git, "-C", path, "fetch", "--depth=64", "--force", "origin", resolved); err == nil {
+			if _, err := runCapture("", git, "-C", path, "cat-file", "-e", commit+"^{commit}"); err == nil {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("dependency %q locked commit %s could not be fetched from %s", name, commit, uri)
 }

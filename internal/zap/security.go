@@ -3,10 +3,47 @@ package zap
 
 import (
 	"fmt"
+	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
+
+// Validate declared sources before they reach Git or generated CMake. This is
+// an input policy. Zap also strips process-injected Git config from Git commands,
+// but repository/global Git configuration and the Git executable remain trusted.
+func validateSourceURI(kind, uri string) error {
+	if kind != "git" && kind != "url" {
+		return nil
+	}
+	if uri == "" || strings.TrimSpace(uri) != uri || strings.ContainsAny(uri, "\r\n\x00") || strings.HasPrefix(uri, "-") {
+		return fmt.Errorf("invalid dependency source URI")
+	}
+	u, err := url.Parse(uri)
+	if err == nil && u.Hostname() != "" && (u.Scheme == "https" || (kind == "git" && u.Scheme == "ssh")) {
+		if u.User != nil {
+			_, hasPassword := u.User.Password()
+			if u.Scheme == "https" || hasPassword {
+				return fmt.Errorf("dependency source URI must not embed credentials; use your Git credential/SSH configuration instead")
+			}
+		}
+		return nil
+	}
+	if kind == "git" {
+		// Require user@host:path for the supported SCP-style SSH spelling.
+		if regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s:]+$`).MatchString(uri) {
+			return nil
+		}
+		if os.Getenv("ZAP_ALLOW_LOCAL_GIT") == "1" && !strings.Contains(uri, "::") {
+			if (err == nil && u.Scheme == "file" && u.Path != "") || filepath.IsAbs(uri) || !strings.Contains(uri, ":") {
+				return nil
+			}
+		}
+		return fmt.Errorf("Git sources require HTTPS or SSH; use type: path for local development (ZAP_ALLOW_LOCAL_GIT=1 enables local Git for tests)")
+	}
+	return fmt.Errorf("URL dependencies require an HTTPS URL with a host")
+}
 
 var (
 	dependencyNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
@@ -15,8 +52,15 @@ var (
 	gitCommitRE      = regexp.MustCompile(`^[0-9A-Fa-f]{40}$`)
 	gitRefRE         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,255}$`)
 	sha256RE         = regexp.MustCompile(`^SHA256=[0-9A-Fa-f]{64}$`)
+	regexpSHA256Hex  = regexp.MustCompile(`^[0-9A-Fa-f]{64}$`)
 	sparsePathRE     = regexp.MustCompile(`^[A-Za-z0-9._+\-]+(?:/[A-Za-z0-9._+\-]+)*$`)
 )
+
+func canonicalDependencyIdentity(name string) string {
+	// CMake's FetchContent dependency names are case-insensitive. Keep storage
+	// spelling stable, but reject identities that CMake would merge.
+	return strings.ToLower(safeName(name))
+}
 
 func validateConfig(cfg *Config, requireGitLocks bool) error {
 	if cfg == nil {
@@ -142,12 +186,15 @@ func validateConfig(cfg *Config, requireGitLocks bool) error {
 		if dep == nil {
 			return fmt.Errorf("dependency %q is missing configuration", name)
 		}
+		if err := validateSourceURI(strings.ToLower(dep.Type), dep.URI); err != nil {
+			return fmt.Errorf("dependency %q: %w", name, err)
+		}
 		if !dependencyNameRE.MatchString(name) {
 			return fmt.Errorf("dependency name %q is invalid; use letters, digits, '_' or '-' and start with a letter", name)
 		}
-		sn := safeName(name)
+		sn := canonicalDependencyIdentity(name)
 		if prior, ok := seenSafe[sn]; ok && prior != name {
-			return fmt.Errorf("dependency names %q and %q collide after CMake-safe normalization", prior, name)
+			return fmt.Errorf("dependency names %q and %q collide after CMake-safe case-folded normalization", prior, name)
 		}
 		seenSafe[sn] = name
 		if dep.OverrideVar != "" && !cmakeVarRE.MatchString(dep.OverrideVar) {
@@ -163,15 +210,13 @@ func validateConfig(cfg *Config, requireGitLocks bool) error {
 			if dep.URI == "" || dep.Version == "" {
 				return fmt.Errorf("dependency %q requires uri and version", name)
 			}
-			if !validGitRef(dep.Version) {
-				return fmt.Errorf("dependency %q version/ref %q contains unsafe or invalid characters", name, dep.Version)
+			if _, err := parseVersionSpec(dep.Version); err != nil {
+				return fmt.Errorf("dependency %q: %w", name, err)
 			}
 			if dep.Commit != "" && !gitCommitRE.MatchString(dep.Commit) {
-				return fmt.Errorf("dependency %q commit must be a 40-character Git commit SHA", name)
+				return fmt.Errorf("dependency %q legacy commit must be a 40-character Git commit SHA", name)
 			}
-			if requireGitLocks && dep.Commit == "" {
-				return fmt.Errorf("dependency %q is not commit-locked; run 'zap sync' or 'zap version %s <ref>' first", name, name)
-			}
+			_ = requireGitLocks // Git locks live in zap.lock from schema 5 onward.
 		case "url":
 			if dep.URI == "" {
 				return fmt.Errorf("dependency %q requires uri", name)
@@ -208,8 +253,11 @@ func validatePackageManifest(m *PackageManifest) error {
 		return fmt.Errorf("nil package manifest")
 	}
 	m.normalize()
-	if m.Schema != PackageSchema {
+	if m.Schema < 1 || m.Schema > PackageSchema {
 		return fmt.Errorf("unsupported zap-package.yml schema %d", m.Schema)
+	}
+	if m.Schema == 1 && len(m.Dependencies) > 0 {
+		return fmt.Errorf("zap-package.yml schema 1 cannot declare package dependencies; use schema 2")
 	}
 	if m.Package.CMakeProject != "" && !cmakeTargetRE.MatchString(m.Package.CMakeProject) {
 		return fmt.Errorf("package cmake_project %q is not a safe CMake project identifier", m.Package.CMakeProject)
@@ -217,6 +265,48 @@ func validatePackageManifest(m *PackageManifest) error {
 	for _, p := range m.Package.Paths {
 		if err := validateSparsePath(p); err != nil {
 			return fmt.Errorf("package path %q: %w", p, err)
+		}
+	}
+	seenDependencyIdentities := map[string]string{}
+	for _, name := range m.DependencyOrder {
+		id := canonicalDependencyIdentity(name)
+		if prior, ok := seenDependencyIdentities[id]; ok && prior != name {
+			return fmt.Errorf("package dependency names %q and %q collide after CMake-safe case-folded normalization", prior, name)
+		}
+		seenDependencyIdentities[id] = name
+	}
+	for _, name := range m.DependencyOrder {
+		d := m.Dependencies[name]
+		if d == nil {
+			return fmt.Errorf("package dependency %q is missing", name)
+		}
+		if err := validateSourceURI(strings.ToLower(d.Type), d.URI); err != nil {
+			return fmt.Errorf("package dependency %q: %w", name, err)
+		}
+		if !dependencyNameRE.MatchString(name) {
+			return fmt.Errorf("package dependency name %q is invalid", name)
+		}
+		for _, c := range d.Components {
+			if !cmakeTargetRE.MatchString(c) {
+				return fmt.Errorf("package dependency %q component %q is not a safe CMake target name", name, c)
+			}
+		}
+		switch strings.ToLower(d.Type) {
+		case "git":
+			if d.URI == "" || d.Version == "" {
+				return fmt.Errorf("package dependency %q requires uri and version", name)
+			}
+			if _, err := parseVersionSpec(d.Version); err != nil {
+				return fmt.Errorf("package dependency %q: %w", name, err)
+			}
+		case "path":
+			if d.URI == "" {
+				return fmt.Errorf("package path dependency %q requires uri", name)
+			}
+		case "url":
+			return fmt.Errorf("package dependency %q: transitive URL dependencies are not supported in schema 2", name)
+		default:
+			return fmt.Errorf("package dependency %q has unsupported type %q", name, d.Type)
 		}
 	}
 	for _, name := range m.ComponentOrder {

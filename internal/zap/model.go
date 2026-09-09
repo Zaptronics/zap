@@ -3,8 +3,9 @@ package zap
 
 import "sort"
 
-const ConfigSchema = 4
-const PackageSchema = 1
+const ConfigSchema = 5
+const PackageSchema = 2
+const LockSchema = 1
 
 type Config struct {
 	Schema          int
@@ -140,10 +141,20 @@ func (c *Config) normalize() {
 }
 
 type PackageManifest struct {
-	Schema         int
-	Package        PackageInfo
-	Components     map[string]*PackageComponent
-	ComponentOrder []string
+	Schema          int
+	Package         PackageInfo
+	Dependencies    map[string]*PackageDependency
+	DependencyOrder []string
+	Components      map[string]*PackageComponent
+	ComponentOrder  []string
+}
+
+type PackageDependency struct {
+	Type         string
+	URI          string
+	Version      string
+	Components   []string
+	ZephyrModule bool
 }
 
 type PackageInfo struct {
@@ -166,7 +177,59 @@ func (p *PackageManifest) normalize() {
 	if p.Schema == 0 {
 		p.Schema = PackageSchema
 	}
+	if p.Dependencies == nil {
+		p.Dependencies = map[string]*PackageDependency{}
+	}
+	if len(p.DependencyOrder) == 0 && len(p.Dependencies) > 0 {
+		for name := range p.Dependencies {
+			p.DependencyOrder = append(p.DependencyOrder, name)
+		}
+		sort.Strings(p.DependencyOrder)
+	}
+	for _, dep := range p.Dependencies {
+		if dep != nil && dep.Type == "" {
+			dep.Type = "git"
+		}
+	}
 	if p.Components == nil {
 		p.Components = map[string]*PackageComponent{}
+	}
+}
+
+type Lockfile struct {
+	Schema          int
+	Dependencies    map[string]*LockedDependency
+	DependencyOrder []string
+}
+
+type LockedDependency struct {
+	Type             string
+	URI              string
+	Requested        []string
+	RootRequested    string
+	Resolved         string
+	Commit           string
+	Hash             string
+	ManifestSHA256   string
+	Components       []string
+	RootComponents   []string
+	Parents          []string
+	Direct           bool
+	ZephyrModule     bool
+	RootZephyrModule bool
+}
+
+func (l *Lockfile) normalize() {
+	if l.Schema == 0 {
+		l.Schema = LockSchema
+	}
+	if l.Dependencies == nil {
+		l.Dependencies = map[string]*LockedDependency{}
+	}
+	if len(l.DependencyOrder) == 0 && len(l.Dependencies) > 0 {
+		for name := range l.Dependencies {
+			l.DependencyOrder = append(l.DependencyOrder, name)
+		}
+		sort.Strings(l.DependencyOrder)
 	}
 }

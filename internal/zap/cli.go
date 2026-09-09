@@ -115,25 +115,22 @@ func Run(args []string) error {
 	case "status":
 		return status(p)
 	case "update":
-		if len(rest) < 1 {
-			return fmt.Errorf("usage: zap update <dependency>")
-		}
-		return update(p, rest[0])
+		return runUpdate(p, rest)
+	case "outdated":
+		return runOutdated(p, rest)
+	case "tree":
+		return runTree(p, rest)
 	case "version":
 		if len(rest) < 2 {
 			return fmt.Errorf("usage: zap version <dependency> <version-or-ref>")
 		}
 		return setVersion(p, rest[0], rest[1])
 	case "add":
-		if len(rest) < 2 {
-			return fmt.Errorf("usage: zap add <dependency> <cmake-target>")
-		}
-		return addComponent(p, rest[0], rest[1], true)
+		return runAdd(p, rest)
 	case "remove":
-		if len(rest) < 2 {
-			return fmt.Errorf("usage: zap remove <dependency> <cmake-target>")
-		}
-		return removeComponent(p, rest[0], rest[1], true)
+		return runRemove(p, rest)
+	case "component":
+		return runComponent(p, rest)
 	case "adapter":
 		name := "platform"
 		if len(rest) > 0 {
@@ -177,6 +174,7 @@ func listConfig(p *Project) error {
 	if err != nil {
 		return err
 	}
+	lock, _ := p.ReadLock()
 	uiBanner("Project", c.Project.Target)
 	uiDetail("Environment", c.Project.Environment)
 	uiDetail("Target", c.Project.Target)
@@ -195,11 +193,29 @@ func listConfig(p *Project) error {
 		d := c.Dependencies[n]
 		uiStep(n, fmt.Sprintf("%s · %s", d.Type, d.Version))
 		uiDetail("Source", d.URI)
-		if d.Commit != "" {
-			uiDetail("Commit", shortCommit(d.Commit))
+		if lock != nil {
+			if l := lock.Dependencies[n]; l != nil {
+				if l.Resolved != "" {
+					uiDetail("Resolved", l.Resolved)
+				}
+				if l.Commit != "" {
+					uiDetail("Commit", shortCommit(l.Commit))
+				}
+			}
 		}
 		if len(d.Components) > 0 {
 			uiDetail("Components", strings.Join(d.Components, ", "))
+		}
+	}
+	if lock != nil {
+		transitive := 0
+		for _, d := range lock.Dependencies {
+			if d != nil && !d.Direct {
+				transitive++
+			}
+		}
+		if transitive > 0 {
+			uiDetail("Transitive", fmt.Sprintf("%d package(s); run 'zap tree'", transitive))
 		}
 	}
 	return nil
@@ -210,16 +226,43 @@ func status(p *Project) error {
 	if err != nil {
 		return err
 	}
+	lock, err := p.ReadLock()
+	if err != nil {
+		return err
+	}
 	uiBanner("Status", c.Project.Target)
+	if lock == nil {
+		uiWarning("zap.lock is missing")
+		uiHint("run 'zap sync' to resolve dependencies")
+		return nil
+	}
+	if !lockCompatibleWithConfig(lock, c) {
+		uiWarning("zap.lock does not match zap.yml")
+		uiHint("run 'zap sync' to resolve the changed manifest")
+	}
 	git, _ := findProgram("git")
-	for _, n := range c.DependencyOrder {
-		d := c.Dependencies[n]
-		path := p.dependencyPath(c, n, d)
-		uiSection(n)
-		uiDetail("Configured", fmt.Sprintf("%s %s %s", d.Type, d.URI, d.Version))
+	for _, n := range lock.DependencyOrder {
+		d := lock.Dependencies[n]
+		if d == nil {
+			continue
+		}
+		path := p.dependencyPathLocked(c, n, d)
+		title := n
+		if !d.Direct {
+			title += " · transitive"
+		}
+		uiSection(title)
+		requested := strings.Join(d.Requested, " & ")
+		if requested != "" {
+			uiDetail("Requested", requested)
+		}
+		if d.Resolved != "" {
+			uiDetail("Resolved", d.Resolved)
+		}
 		if d.Commit != "" {
 			uiDetail("Locked", d.Commit)
 		}
+		uiDetail("Source", d.URI)
 		uiDetail("Path", path)
 		if strings.ToLower(d.Type) != "git" {
 			continue
@@ -229,7 +272,12 @@ func status(p *Project) error {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
-			uiWarning("checkout: not fetched")
+			root := c.Dependencies[n]
+			if root != nil && d.Direct && root.OverrideVar != "" && os.Getenv(root.OverrideVar) != "" {
+				uiSuccess("Local override active")
+			} else {
+				uiWarning("checkout: not fetched")
+			}
 			continue
 		}
 		head, _ := runCapture("", git, "-C", path, "rev-parse", "--short=12", "HEAD")
@@ -246,39 +294,6 @@ func status(p *Project) error {
 	return nil
 }
 
-func update(p *Project, name string) error {
-	c, err := p.ReadConfig()
-	if err != nil {
-		return err
-	}
-	d := c.Dependencies[name]
-	if d == nil {
-		return fmt.Errorf("dependency %q not found", name)
-	}
-	if strings.ToLower(d.Type) != "git" {
-		return fmt.Errorf("zap update currently lists releases for git dependencies only")
-	}
-	git, err := findProgram("git")
-	if err != nil {
-		return err
-	}
-	tags, err := listStableTags(git, d.URI)
-	if err != nil {
-		return err
-	}
-	uiBanner("Releases", name)
-	uiDetail("Current", d.Version)
-	uiSection("Available")
-	for _, tag := range tags {
-		if tag == d.Version {
-			uiSuccess(tag + " · current")
-		} else {
-			uiStep("Release", tag)
-		}
-	}
-	uiHint(fmt.Sprintf("use 'zap version %s <tag>' to select a release", name))
-	return nil
-}
 func setVersion(p *Project, name, v string) error {
 	c, err := p.ReadConfig()
 	if err != nil {
@@ -289,28 +304,22 @@ func setVersion(p *Project, name, v string) error {
 		return fmt.Errorf("dependency %q not found", name)
 	}
 	if strings.ToLower(d.Type) != "git" {
-		d.Version = v
-		if err := p.WriteConfig(c); err != nil {
-			return err
-		}
-		return p.Generate(c)
+		return fmt.Errorf("dependency %q is %s; version constraints apply to Git dependencies", name, d.Type)
 	}
-	git, err := findProgram("git")
-	if err != nil {
-		return fmt.Errorf("git is required to lock dependency %q to a new version: %w", name, err)
-	}
-	sha, err := resolveRemoteRef(git, d.URI, v)
-	if err != nil {
-		return err
+	if _, err := parseVersionSpec(v); err != nil {
+		return fmt.Errorf("dependency %q: %w", name, err)
 	}
 	d.Version = v
-	d.Commit = sha
+	d.Commit = ""
 	c.Schema = ConfigSchema
 	if err := p.WriteConfig(c); err != nil {
 		return err
 	}
-	uiSuccess(fmt.Sprintf("%s locked to %s", name, v))
-	uiDetail("Commit", sha)
+	uiBanner("Version", name)
+	uiSuccess(fmt.Sprintf("Requested %s", v))
+	if err := p.SyncWithResolveOptions(c, ResolveOptions{Update: map[string]bool{name: true}}); err != nil {
+		return err
+	}
 	return p.Generate(c)
 }
 
@@ -381,13 +390,17 @@ func printHelp() {
 	uiHelpCommand("zap adapter", "[name]", "Generate a portable platform adapter skeleton")
 
 	uiHelpSection("Dependencies")
-	uiHelpCommand("zap list", "", "Show project dependencies and selected targets")
-	uiHelpCommand("zap verify", "[--offline]", "Verify local copies and immutable remote locks")
+	uiHelpCommand("zap add", "<name> --git <uri> [--version <constraint>]", "Add a Git dependency and resolve it")
+	uiHelpCommand("zap add", "<name> --path <path>", "Add a local path dependency")
+	uiHelpCommand("zap remove", "<dependency>", "Remove a direct dependency")
+	uiHelpCommand("zap component", "<add|remove> <dep> <target>", "Change selected package components")
+	uiHelpCommand("zap update", "[dependency ...]", "Update locked versions within declared constraints")
+	uiHelpCommand("zap outdated", "", "Show compatible and newer dependency releases")
+	uiHelpCommand("zap tree", "[--why <dependency>]", "Explain the resolved dependency graph")
+	uiHelpCommand("zap list", "", "Show dependency intent and locked resolution")
+	uiHelpCommand("zap version", "<dep> <constraint>", "Change a dependency version constraint")
+	uiHelpCommand("zap verify", "[--offline]", "Verify zap.lock, checkouts, and immutable sources")
 	uiHelpCommand("zap audit", "", "List literal external sources in build manifests")
-	uiHelpCommand("zap update", "<dep>", "Show available stable release tags")
-	uiHelpCommand("zap version", "<dep> <ref>", "Pin a dependency version/ref in zap.yml")
-	uiHelpCommand("zap add", "<dep> <target>", "Add a component and synchronise")
-	uiHelpCommand("zap remove", "<dep> <target>", "Remove a component and synchronise")
 
 	uiHelpSection("Tool")
 	uiHelpCommand("zap help", "", "Show this help")

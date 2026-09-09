@@ -19,6 +19,7 @@ func fileURI(path string) string {
 }
 
 func TestSparseGitSync(t *testing.T) {
+	t.Setenv("ZAP_ALLOW_LOCAL_GIT", "1")
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not installed")
@@ -99,6 +100,7 @@ components:
 }
 
 func TestVerifyDetectsMovedTag(t *testing.T) {
+	t.Setenv("ZAP_ALLOW_LOCAL_GIT", "1")
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not installed")
@@ -134,6 +136,9 @@ func TestVerifyDetectsMovedTag(t *testing.T) {
 	}
 	p := OpenProject(projectRoot)
 	cfg := &Config{Schema: ConfigSchema, Project: ProjectConfig{Environment: "generic", Target: "app", BuildDir: "build", DepsDir: "deps"}, Dependencies: map[string]*DependencyConfig{"demo": {Type: "git", URI: fileURI(repo), Version: "v1.0.0", Commit: first}}, DependencyOrder: []string{"demo"}}
+	if err := p.Sync(cfg); err != nil {
+		t.Fatalf("initial sync failed: %v", err)
+	}
 	if err := p.Verify(cfg, VerifyOptions{}); err != nil {
 		t.Fatalf("initial verification failed: %v", err)
 	}
@@ -150,6 +155,7 @@ func TestVerifyDetectsMovedTag(t *testing.T) {
 }
 
 func TestOfflineVerifyChecksLocalLockedCopy(t *testing.T) {
+	t.Setenv("ZAP_ALLOW_LOCAL_GIT", "1")
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not installed")
@@ -199,6 +205,7 @@ func TestOfflineVerifyChecksLocalLockedCopy(t *testing.T) {
 }
 
 func TestSyncLocksRemoteWhileLocalOverrideIsActive(t *testing.T) {
+	t.Setenv("ZAP_ALLOW_LOCAL_GIT", "1")
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not installed")
@@ -246,8 +253,15 @@ func TestSyncLocksRemoteWhileLocalOverrideIsActive(t *testing.T) {
 	if cfg.Schema != ConfigSchema {
 		t.Fatalf("schema = %d, want %d", cfg.Schema, ConfigSchema)
 	}
-	if !strings.EqualFold(cfg.Dependencies["demo"].Commit, sha) {
-		t.Fatalf("commit = %q, want %q", cfg.Dependencies["demo"].Commit, sha)
+	if cfg.Dependencies["demo"].Commit != "" {
+		t.Fatalf("legacy commit should be migrated out of zap.yml, got %q", cfg.Dependencies["demo"].Commit)
+	}
+	lock, err := p.ReadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lock == nil || !strings.EqualFold(lock.Dependencies["demo"].Commit, sha) {
+		t.Fatalf("lock commit = %#v, want %q", lock, sha)
 	}
 	if _, err := os.Stat(filepath.Join(root, "deps", "demo")); !os.IsNotExist(err) {
 		t.Fatalf("managed dependency checkout should not be created while override is active: %v", err)
@@ -255,6 +269,7 @@ func TestSyncLocksRemoteWhileLocalOverrideIsActive(t *testing.T) {
 }
 
 func TestVerifyStillChecksRemoteLockWithLocalOverride(t *testing.T) {
+	t.Setenv("ZAP_ALLOW_LOCAL_GIT", "1")
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not installed")
@@ -293,6 +308,9 @@ func TestVerifyStillChecksRemoteLockWithLocalOverride(t *testing.T) {
 	root := t.TempDir()
 	p := OpenProject(root)
 	cfg := &Config{Schema: ConfigSchema, Project: ProjectConfig{Environment: "generic", Target: "app", BuildDir: "build", DepsDir: "deps"}, Dependencies: map[string]*DependencyConfig{"demo": {Type: "git", URI: fileURI(repo), Version: "v1.0.0", Commit: first, OverrideVar: "TEST_ZAP_SOURCE"}}, DependencyOrder: []string{"demo"}}
+	if err := p.Sync(cfg); err != nil {
+		t.Fatalf("initial sync failed: %v", err)
+	}
 	if err := p.Verify(cfg, VerifyOptions{}); err != nil {
 		t.Fatalf("initial verification failed: %v", err)
 	}

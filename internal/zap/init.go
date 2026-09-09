@@ -144,15 +144,17 @@ func (p *Project) Init(opts InitOptions) error {
 	}
 	uiSection("Planned changes")
 	uiStep("CREATE", "zap.yml")
+	uiStep("CREATE", "zap.lock")
 	uiStep("CREATE", "cmake/zap_deps.cmake")
 	uiStep("CREATE", "cmake/zap_zephyr.conf")
 	uiStep("EDIT", "CMakeLists.txt · only ZAP MANAGED blocks")
 	uiHint("vendor build files remain unchanged")
-	version := opts.ZapEEVersion
+	version := strings.TrimSpace(opts.ZapEEVersion)
+	inspectRevision := version
+	if gitErr != nil {
+		return fmt.Errorf("git is required during zap init to inspect and resolve the ZapEE package; offline operation is supported after zap.lock has been created")
+	}
 	if version == "" {
-		if gitErr != nil {
-			return fmt.Errorf("git is required during zap init to discover and immutably lock the ZapEE release; offline operation is supported after the dependency lock has been created")
-		}
 		tags, err := listStableTags(git, uri)
 		if err != nil {
 			return fmt.Errorf("could not query ZapEE releases: %w", err)
@@ -160,22 +162,44 @@ func (p *Project) Init(opts InitOptions) error {
 		if len(tags) == 0 {
 			return fmt.Errorf("no stable semantic-version tags were found at %s", uri)
 		}
-		version = tags[0]
-		uiSuccess("Latest ZapEE release: " + version)
+		latest := tags[0]
+		v, _ := parseSemver(latest)
+		version = "^" + semverString(v)
+		inspectRevision = latest
+		uiSuccess(fmt.Sprintf("Latest ZapEE release: %s · requested %s", latest, version))
+	} else {
+		spec, err := parseVersionSpec(version)
+		if err != nil {
+			return fmt.Errorf("invalid --zapee-version: %w", err)
+		}
+		switch spec.kind {
+		case "semver":
+			tags, err := listStableTags(git, uri)
+			if err != nil {
+				return err
+			}
+			inspectRevision = ""
+			for _, tag := range tags {
+				if spec.matchesVersion(mustSemver(tag)) {
+					inspectRevision = tag
+					break
+				}
+			}
+			if inspectRevision == "" {
+				return fmt.Errorf("no ZapEE release satisfies %s", version)
+			}
+		case "tag", "ref":
+			inspectRevision = spec.value
+		case "commit":
+			inspectRevision = spec.value
+		}
 	}
 	components := []string(opts.Components)
-	var manifest *PackageManifest
-	var lockedCommit string
-	if gitErr == nil {
-		manifest, lockedCommit, err = loadRemotePackageManifestLocked(git, uri, version)
-		if err != nil {
-			return err
-		}
+	manifest, _, err := loadRemotePackageManifestLocked(git, uri, inspectRevision)
+	if err != nil {
+		return err
 	}
 	if len(components) == 0 {
-		if gitErr != nil {
-			return fmt.Errorf("git is required to inspect ZapEE components")
-		}
 		m := manifest
 		mods := publicModules(m)
 		if interactive && len(mods) > 0 {
@@ -213,7 +237,7 @@ func (p *Project) Init(opts InitOptions) error {
 		upload = defaultPicoUploadConfig()
 	}
 	cfg := &Config{Schema: ConfigSchema, Project: ProjectConfig{Environment: env, Target: target, Board: board, BuildDir: "build", DepsDir: opts.DepsDir, AdaptersDir: opts.AdaptersDir}, Build: build, Upload: upload, Dependencies: map[string]*DependencyConfig{}, DependencyOrder: []string{"zapee"}}
-	dep := &DependencyConfig{Type: "git", URI: uri, Version: version, Commit: lockedCommit, OverrideVar: "ZAPEE_SOURCE", ZephyrModule: true, Components: components}
+	dep := &DependencyConfig{Type: "git", URI: uri, Version: version, OverrideVar: "ZAPEE_SOURCE", ZephyrModule: true, Components: components}
 	if env == "zephyr" {
 		dep.ZephyrConfig = []string{"CONFIG_ZAPEE=y"}
 		for _, c := range components {
@@ -225,11 +249,15 @@ func (p *Project) Init(opts InitOptions) error {
 			}
 		}
 	}
-	if dep.Commit == "" {
-		return fmt.Errorf("zap init requires Git access to resolve %s to an immutable commit; create the project while online, then builds may use offline verification", version)
-	}
 	cfg.Dependencies["zapee"] = dep
 	if err := p.WriteConfig(cfg); err != nil {
+		return err
+	}
+	lock, err := p.ResolveDependencies(cfg, nil, ResolveOptions{})
+	if err != nil {
+		return err
+	}
+	if err := p.WriteLock(lock); err != nil {
 		return err
 	}
 	if err := p.Generate(cfg); err != nil {

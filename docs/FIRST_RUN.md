@@ -15,8 +15,10 @@
 8. Open the project in the IDE. Sparse dependency sources are under `deps/` and
    CMake compile metadata exposes public includes to IntelliSense/clangd.
 
-New Git dependencies are recorded with both a readable `version:` and immutable
-`commit:` lock.
+Zap records human dependency intent in `zap.yml` and writes the exact resolved
+graph to `zap.lock`. Commit both files. Git dependencies in the lock are pinned
+to immutable commits; `zap sync` preserves those versions until `zap update` or
+a constraint change deliberately moves them.
 
 For CI/non-interactive initialization, external sources must be acknowledged
 explicitly:
