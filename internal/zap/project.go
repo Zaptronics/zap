@@ -53,6 +53,13 @@ func (p *Project) Generate(c *Config) error {
 	if err != nil {
 		return err
 	}
+	sdk, err := p.generatePicoSDK(c, lock)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(p.GeneratedDir, "zap_sdk.cmake"), []byte(sdk), 0o644); err != nil {
+		return err
+	}
 	if err := os.WriteFile(p.GeneratedCMake, []byte(cm), 0o644); err != nil {
 		return err
 	}
@@ -78,6 +85,14 @@ func (p *Project) Check(c *Config) error {
 	}
 	if normalize(string(got)) != normalize(cm) {
 		return fmt.Errorf("cmake/zap_deps.cmake is out of date; run 'zap generate'")
+	}
+	sdk, err := p.generatePicoSDK(c, lock)
+	if err != nil {
+		return err
+	}
+	got, err = os.ReadFile(filepath.Join(p.GeneratedDir, "zap_sdk.cmake"))
+	if err != nil || normalize(string(got)) != normalize(sdk) {
+		return fmt.Errorf("cmake/zap_sdk.cmake is missing or out of date; run 'zap generate'")
 	}
 	zc := GenerateZephyrConf(c)
 	got, err = os.ReadFile(p.GeneratedZephyr)
@@ -290,6 +305,11 @@ func (p *Project) materializeLock(c *Config, lock *Lockfile) error {
 				if err != nil {
 					return fmt.Errorf("%s: %w", name, err)
 				}
+				// Submodule worktrees must be present for recursive initialization.
+				if _, err := showFileAt(git, path, d.Commit, ".gitmodules"); err == nil {
+					paths = nil
+					uiHint("repository has submodules; using a full checkout")
+				}
 				uiDetail("Checkout", fmt.Sprintf("%d paths · %d components", len(paths), len(d.Components)))
 				if err := checkoutSparse(git, path, d.Commit, paths); err != nil {
 					return err
@@ -303,6 +323,9 @@ func (p *Project) materializeLock(c *Config, lock *Lockfile) error {
 				if err := runStreaming("", git, "-C", path, "checkout", "--detach", d.Commit); err != nil {
 					return err
 				}
+			}
+			if err := syncSubmodules(git, name, path); err != nil {
+				return err
 			}
 		case "path":
 			if _, err := os.Stat(path); err != nil {

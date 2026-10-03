@@ -176,6 +176,7 @@ func (p *Project) Configure(c *Config) error {
 }
 
 func (p *Project) ConfigureWithOptions(c *Config, o ConfigureOptions) error {
+	p.warnIntegrity("before configuration")
 	env := strings.ToLower(c.Project.Environment)
 	build := o.BuildDir
 	if build == "" {
@@ -237,13 +238,27 @@ func (p *Project) ConfigureWithOptions(c *Config, o ConfigureOptions) error {
 		toolchainVersion := cmakeSetValue(p.CMakePath, "toolchainVersion")
 		picotoolVersion := cmakeSetValue(p.CMakePath, "picotoolVersion")
 		extra := append([]string{}, zapEnv...)
-		sdkPath := os.Getenv("PICO_SDK_PATH")
+		lock, err := p.lockForGeneration(c)
+		if err != nil {
+			return err
+		}
+		managedSDK, err := p.managedPicoSDK(c, lock)
+		if err != nil {
+			return err
+		}
+		sdkPath := managedSDK
+		if sdkPath == "" {
+			sdkPath = os.Getenv("PICO_SDK_PATH")
+		} else if _, err := os.Stat(filepath.Join(sdkPath, "pico_sdk_init.cmake")); err != nil {
+			return fmt.Errorf("managed Pico SDK is missing at %s; run 'zap sync --no-configure'", sdkPath)
+		}
 		if sdkPath == "" {
 			sdkPath = exactOrNewestDir(filepath.Join(root, "sdk"), sdkVersion)
 			if sdkPath != "" {
 				extra = append(extra, "PICO_SDK_PATH="+sdkPath)
 			}
 		}
+		extra = append(extra, "PICO_SDK_PATH="+sdkPath)
 		toolchainPath := os.Getenv("PICO_TOOLCHAIN_PATH")
 		if toolchainPath == "" {
 			toolchainPath = exactOrNewestDir(filepath.Join(root, "toolchain"), toolchainVersion)
@@ -256,6 +271,10 @@ func (p *Project) ConfigureWithOptions(c *Config, o ConfigureOptions) error {
 		}
 		args := []string{"-S", p.Root, "-B", buildPath}
 		args = appendCommon(args)
+		// Override stale CMake cache entries as well as inherited environment.
+		if managedSDK != "" {
+			args = append(args, "-DPICO_SDK_PATH="+filepath.ToSlash(managedSDK))
+		}
 		if board != "" {
 			args = append(args, "-DPICO_BOARD="+board)
 		}

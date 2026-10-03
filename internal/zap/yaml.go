@@ -129,6 +129,11 @@ func ParseConfig(text string) (*Config, error) {
 			if !ok {
 				return nil, fmt.Errorf("invalid zap.yml line %d: %s", lineNo, text)
 			}
+			if k == "integrity_public_key" {
+				cfg.IntegrityPublicKey = v
+				section = ""
+				continue
+			}
 			if k != "schema" {
 				return nil, fmt.Errorf("unknown top-level zap.yml key %q on line %d", k, lineNo)
 			}
@@ -146,6 +151,8 @@ func ParseConfig(text string) (*Config, error) {
 				return nil, fmt.Errorf("invalid project setting on line %d", lineNo)
 			}
 			switch k {
+			case "name":
+				cfg.Project.Name = v
 			case "environment":
 				cfg.Project.Environment = v
 			case "target":
@@ -446,7 +453,13 @@ func FormatConfig(cfg *Config) string {
 	var b strings.Builder
 	b.WriteString("# Zap dependency manifest\n")
 	fmt.Fprintf(&b, "schema: %d\n\n", cfg.Schema)
+	if cfg.IntegrityPublicKey != "" {
+		fmt.Fprintf(&b, "integrity_public_key: %s\n\n", yamlQuote(cfg.IntegrityPublicKey))
+	}
 	b.WriteString("project:\n")
+	if cfg.Project.Name != "" {
+		fmt.Fprintf(&b, "  name: %s\n", yamlQuote(cfg.Project.Name))
+	}
 	fmt.Fprintf(&b, "  environment: %s\n", yamlQuote(cfg.Project.Environment))
 	fmt.Fprintf(&b, "  target: %s\n", yamlQuote(cfg.Project.Target))
 	if cfg.Project.Board != "" {

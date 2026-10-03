@@ -8,15 +8,18 @@ const PackageSchema = 2
 const LockSchema = 1
 
 type Config struct {
-	Schema          int
-	Project         ProjectConfig
-	Build           BuildConfig
-	Upload          UploadConfig
-	Dependencies    map[string]*DependencyConfig
-	DependencyOrder []string
+	// Legacy field retained for explicit migration to .zap/signers.json.
+	IntegrityPublicKey string
+	Schema             int
+	Project            ProjectConfig
+	Build              BuildConfig
+	Upload             UploadConfig
+	Dependencies       map[string]*DependencyConfig
+	DependencyOrder    []string
 }
 
 type ProjectConfig struct {
+	Name        string
 	Environment string
 	Target      string
 	Board       string

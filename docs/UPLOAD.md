@@ -114,7 +114,38 @@ when its same-named variable is non-empty. Put `{?name}` in `args:` to insert th
 group at that exact point; if no insertion marker is present the group is
 appended for compatibility with simple tools.
 
-## Executable discovery
+## Artifact paths
+
+`{artifact}` expands to an absolute path using forward slashes, including on
+Windows. This prevents OpenOCD's Tcl interpreter from consuming backslashes in
+the quoted `program` command above. Keep the quotes to preserve paths with spaces.
+
+## Troubleshooting Pico uploads
+
+For a target connected through a debug probe, select OpenOCD directly:
+
+```text
+zap upload --method openocd --artifact build/hub.elf
+```
+
+`--artifact` overrides the artifact for every attempted method; it does not select
+a method or convert file formats. Avoid an ELF override in auto mode when the
+order includes a UF2 volume-copy method, which would copy the ELF unchanged.
+
+No matching BOOTSEL volume and picotool's "No accessible RP-series devices"
+message concern access to the target over USB. A working CMSIS-DAP debug probe
+does not establish that the target's USB bootloader is accessible. Connect the
+target's USB and enter BOOTSEL to use those methods. Picotool's `-f` can request a
+reboot only from compatible running firmware; see the
+[picotool documentation](https://github.com/raspberrypi/picotool#readme).
+
+If OpenOCD discovers the cores and flash, then reports "couldn't open" with
+missing path separators, use Zap 0.11.1 or later. Its `{artifact}` expansion fixes
+the Windows path escaping in the existing template. An old Debugprobe firmware
+warning is separate from that file-open failure. Integrity warnings are also
+separate: review the source changes with `zap audit` before approving a baseline.
+
+## Executable search and auxiliary files
 
 `command` methods declare an executable and search locations. `PATH` means the
 normal process search path; other entries are directories searched recursively.

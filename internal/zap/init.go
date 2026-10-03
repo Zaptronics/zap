@@ -14,6 +14,12 @@ import (
 const DefaultZapEEURI = "https://github.com/Zaptronics/zap-ee.git"
 
 type InitOptions struct {
+	Explicit       map[string]bool
+	Yes            bool
+	BuildDir       string
+	SignerLabel    string
+	SignerIdentity string
+	Name           string
 	Environment    string
 	Target         string
 	Board          string
@@ -35,6 +41,11 @@ func InitFlagSet() (*flag.FlagSet, *InitOptions) {
 	o := &InitOptions{DepsDir: "deps", AdaptersDir: "adapters", ZapEEURI: DefaultZapEEURI}
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.BoolVar(&o.Yes, "yes", false, "apply explicit non-interactive updates to an existing project")
+	fs.StringVar(&o.BuildDir, "build-dir", "build", "project build directory")
+	fs.StringVar(&o.SignerLabel, "signer-label", "", "optional public signer display label")
+	fs.StringVar(&o.SignerIdentity, "signer-identity", "hashed", "public signer labels: hashed or public")
+	fs.StringVar(&o.Name, "name", "", "project display name (defaults to Git origin name or folder)")
 	fs.StringVar(&o.Environment, "environment", "", "pico-sdk, zephyr, or generic")
 	fs.StringVar(&o.Target, "target", "", "application CMake target")
 	fs.StringVar(&o.Board, "board", "", "target board")
@@ -43,7 +54,7 @@ func InitFlagSet() (*flag.FlagSet, *InitOptions) {
 	fs.StringVar(&o.ZapEEURI, "zapee-uri", DefaultZapEEURI, "ZapEE Git repository")
 	fs.StringVar(&o.ZapEEVersion, "zapee-version", "", "ZapEE release/ref (defaults to latest stable)")
 	fs.Var(&o.Components, "component", "component target to select; may be repeated")
-	fs.BoolVar(&o.Force, "force", false, "overwrite existing zap.yml")
+	fs.BoolVar(&o.Force, "force", false, "deprecated: existing projects now use guided updates")
 	fs.BoolVar(&o.AcceptSources, "accept-sources", false, "confirm detected external dependency sources (for non-interactive setup)")
 	fs.BoolVar(&o.NonInteractive, "non-interactive", false, "do not prompt")
 	return fs, o
@@ -83,11 +94,22 @@ func promptChoice(r *bufio.Reader, label string, choices []string, def int) (str
 }
 
 func (p *Project) Init(opts InitOptions) error {
+	identityMode, err := signerIdentityMode(opts.SignerIdentity)
+	if err != nil {
+		return err
+	}
 	_, configErr := os.Stat(p.ConfigPath)
 	configExists := configErr == nil
-	if configExists && !opts.Force {
-		return fmt.Errorf("zap.yml already exists; zap init will not overwrite it. Use --force only if you intend to replace it")
+	if configErr != nil && !os.IsNotExist(configErr) {
+		return configErr
 	}
+	if configExists {
+		return p.initExisting(opts)
+	}
+	if opts.BuildDir == "" {
+		opts.BuildDir = "build"
+	}
+	identityLabel := opts.SignerLabel
 	cmakeBytes, err := os.ReadFile(p.CMakePath)
 	if err != nil {
 		return fmt.Errorf("zap init expects CMakeLists.txt in the project root")
@@ -109,9 +131,24 @@ func (p *Project) Init(opts InitOptions) error {
 	}
 	uri := opts.ZapEEURI
 	git, gitErr := findProgram("git")
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		name = p.suggestedName(git)
+	}
 	if interactive {
-		uiBanner("Project setup", filepath.Base(p.Root))
+		setupWelcome(p, &Config{Project: ProjectConfig{Name: name}}, false)
+		uiSection("1/4 · Project identity")
 		var e error
+		name, e = prompt(r, "Project display name", auditText(name))
+		if e != nil {
+			return e
+		}
+		identityMode, identityLabel, e = setupPrivacy(r, identityMode, identityLabel)
+		if e != nil {
+			return e
+		}
+		uiSection("3/4 · Build and dependencies")
+		uiHint("Zap keeps dependency choices in zap.yml and exact resolved versions in zap.lock.")
 		env, e = promptChoice(r, "Environment:", []string{"pico-sdk", "zephyr", "generic"}, indexOf([]string{"pico-sdk", "zephyr", "generic"}, env))
 		if e != nil {
 			return e
@@ -125,6 +162,14 @@ func (p *Project) Init(opts InitOptions) error {
 			if e != nil {
 				return e
 			}
+		}
+		opts.BuildDir, e = setupText(r, "Build folder", opts.BuildDir)
+		if e != nil {
+			return e
+		}
+		opts.AdaptersDir, e = setupText(r, "Generated adapter folder", opts.AdaptersDir)
+		if e != nil {
+			return e
 		}
 		opts.DepsDir, e = prompt(r, "Dependency folder", opts.DepsDir)
 		if e != nil {
@@ -236,7 +281,7 @@ func (p *Project) Init(opts InitOptions) error {
 	if env == "pico-sdk" {
 		upload = defaultPicoUploadConfig()
 	}
-	cfg := &Config{Schema: ConfigSchema, Project: ProjectConfig{Environment: env, Target: target, Board: board, BuildDir: "build", DepsDir: opts.DepsDir, AdaptersDir: opts.AdaptersDir}, Build: build, Upload: upload, Dependencies: map[string]*DependencyConfig{}, DependencyOrder: []string{"zapee"}}
+	cfg := &Config{Schema: ConfigSchema, Project: ProjectConfig{Name: name, Environment: env, Target: target, Board: board, BuildDir: opts.BuildDir, DepsDir: opts.DepsDir, AdaptersDir: opts.AdaptersDir}, Build: build, Upload: upload, Dependencies: map[string]*DependencyConfig{}, DependencyOrder: []string{"zapee"}}
 	dep := &DependencyConfig{Type: "git", URI: uri, Version: version, OverrideVar: "ZAPEE_SOURCE", ZephyrModule: true, Components: components}
 	if env == "zephyr" {
 		dep.ZephyrConfig = []string{"CONFIG_ZAPEE=y"}
@@ -250,6 +295,30 @@ func (p *Project) Init(opts InitOptions) error {
 		}
 	}
 	cfg.Dependencies["zapee"] = dep
+	if interactive {
+		uiSection("4/4 · Ready to initialise")
+		uiDetail("Project", name)
+		uiDetail("Build", target+" / "+env)
+		uiDetail("ZapEE", uri+" / "+version)
+		uiDetail("Components", strings.Join(components, ", "))
+		uiDetail("Signer privacy", identityMode)
+		uiDetail("Signer label", identityLabel)
+		uiHint("Create the manifest/lock and generated integration, and update only the managed CMake blocks.")
+		answer, err := prompt(r, "Create this Zap setup? (yes/no)", "no")
+		if err != nil {
+			return err
+		}
+		if !auditYes(answer) {
+			uiHint("Setup cancelled. Project configuration not saved.")
+			return nil
+		}
+	}
+	if _, err := os.Lstat(p.ConfigPath); !os.IsNotExist(err) {
+		return fmt.Errorf("zap.yml appeared during setup; rerun init to review it")
+	}
+	if err := saveSignerIdentityPreference(p.Root, identityMode, identityLabel); err != nil {
+		return err
+	}
 	if err := p.WriteConfig(cfg); err != nil {
 		return err
 	}

@@ -74,7 +74,7 @@ func (p *Project) Upload(c *Config, o UploadOptions) error {
 		}
 	}
 
-	uiBanner("Upload", c.Project.Target)
+	uiBanner("Upload", p.displayName(c))
 	uiSection("Program")
 
 	selected := strings.TrimSpace(o.Method)
@@ -151,7 +151,10 @@ func (p *Project) runUploadMethod(c *Config, name string, o UploadOptions) error
 		artifact = filepath.Join(p.Root, artifact)
 	}
 	artifact = filepath.Clean(artifact)
-	vars["artifact"] = artifact
+	// OpenOCD embeds this value in Tcl, where Windows backslashes are escapes.
+	// Forward slashes also work for native Windows file arguments; keep the
+	// native path above for filesystem operations and upload status messages.
+	vars["artifact"] = filepath.ToSlash(artifact)
 
 	switch strings.ToLower(strings.TrimSpace(m.Type)) {
 	case "volume-copy":

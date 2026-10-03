@@ -28,6 +28,7 @@ type uiRow struct {
 }
 
 func ansiEnabled(f *os.File) bool {
+	f = uiConsole(f)
 	if os.Getenv("NO_COLOR") != "" {
 		return false
 	}
@@ -334,4 +335,19 @@ func PrintError(w io.Writer, err error) {
 		return
 	}
 	fmt.Fprintf(w, "zap: %v\n", err)
+}
+
+func uiIntegrityWarning(phase, reason string) {
+	writeIntegrityWarning(os.Stderr, ansiEnabled(os.Stderr), phase, reason)
+}
+
+func writeIntegrityWarning(w io.Writer, color bool, phase, reason string) {
+	heading := "! ZAP INTEGRITY WARNING"
+	if color {
+		heading = "⚠ ZAP INTEGRITY WARNING"
+	}
+	fmt.Fprintf(w, "\n%s\n%s\n%s\n\n",
+		paint(color, ansiBold+ansiYellow, "  "+heading+" — "+auditText(phase)),
+		paint(color, ansiYellow, "  | "+auditText(reason)),
+		paint(color, ansiBold+ansiYellow, "  | Action: run zap audit"))
 }

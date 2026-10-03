@@ -83,6 +83,9 @@ func (p *Project) Verify(c *Config, opts VerifyOptions) error {
 				if !clean {
 					return fmt.Errorf("dependency %q local checkout has modifications and does not match zap.lock:\n%s", name, details)
 				}
+				if err := verifySubmodules(git, name, path); err != nil {
+					return err
+				}
 				if d.ManifestSHA256 != "" {
 					text, err := showFileAt(git, path, d.Commit, "zap-package.yml")
 					if err != nil {

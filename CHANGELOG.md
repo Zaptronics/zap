@@ -2,6 +2,117 @@
 
 ## Unreleased
 
+### 0.11.1 - Windows upload artifact paths
+
+- Expand upload `{artifact}` paths with forward slashes so OpenOCD Tcl commands preserve Windows paths, including paths with spaces.
+- Document explicit OpenOCD selection, USB BOOTSEL requirements, and the effect of artifact overrides during auto fallback.
+
+Validation: source and patch review only; no builds, tests, or hardware uploads run.
+
+### 0.11.0 - managed Pico SDK and recursive submodules
+
+- Initialize recursive Git submodules at the commits recorded by the locked superproject; use full checkouts for repositories declaring submodules.
+- Verify recursive submodule revisions and working-tree modifications.
+- Prefer the declared pico-sdk dependency over installed SDKs and stale CMake cache values; generate cmake/zap_sdk.cmake for inclusion before SDK import and project().
+- Exclude the Pico SDK from ordinary FetchContent integration in Pico projects.
+
+Validation not run: building and testing are left to the user.
+
+### 0.10.0 - repeatable guided setup
+
+- let zap init revisit existing project settings with current values as defaults, a proposed-change summary and default-No saving;
+- update selected manifest fields while preserving unrelated settings and source text, without resolving dependencies or regenerating build files;
+- add a public signer alias and optionally update only the local user's existing signer labels after review;
+- add -init/--init aliases and explicit --yes for non-interactive existing-project updates; and
+- add a welcoming, staged introduction and explanations for new and existing projects.
+
+Source/documentation changes only; no builds, tests or exhaustive review performed.
+
+### 0.9.3 - signer identity privacy choice
+
+- ask during zap init whether new signer entries should publish hashed or readable account/host labels, defaulting to hashed;
+- support init --signer-identity hashed|public and store the per-user preference outside the project;
+- bind recorded identifiers through the signed signer-list inventory without claiming user/host attestation; and
+- leave existing signer entries unchanged.
+
+Source edits only; not built or tested.
+
+### 0.9.2 - paginated source diffs
+
+- show requested diffs in pages of five files, including page/remaining counts;
+- default Enter to the next page, while keeping final signing approval default No;
+- clarify that stopping the diff view does not exclude unseen files from approval; and
+- document privacy considerations for optional public signer user/host labels.
+
+Source/documentation edits only; no builds or tests run.
+
+### 0.9.1 - missing signer-list recovery
+
+- let interactive audit --enroll recover from an existing baseline with a missing signer list, using explicit default-No fresh setup and preserving the old baseline as unverified evidence;
+- explain how ordinary audit can recover the original signer list from Git; and
+- document the portable Go build command without an explicit output filename.
+
+Source and documentation edits only; no builds or tests run.
+
+### 0.9.0 - shared hardware signers
+
+- move public identities into .zap/signers.json, with user/device labels and one entry per key;
+- treat the checked-out signer list as authorised by Git/human review, without separate local trust approval;
+- add zap audit --enroll and explicit --migrate-signers migration, reusing existing local private-key references;
+- verify shared baselines without private-key enrollment, and sign portable logical-root manifests with a signer fingerprint;
+- include signers.json in source integrity and allowlist the registry/baseline for Git while retaining private history exclusions; and
+- retire the local baseline digest as an anti-replay trust gate; shared state and rollback review belong to Git.
+
+Source-only change: not built, tested, or exhaustively reviewed. Existing single-signer test expectations have not been migrated.
+
+### 0.8.5 - prominent integrity warnings
+
+- highlight integrity warnings on stderr with a bold yellow heading and a separate audit action;
+- preserve clear warning blocks when colour is disabled; and
+- label routine integrity scans accurately.
+
+### 0.8.4 - audit report links
+
+- make audit report labels explicit terminal hyperlinks with escaped file URLs, including paths containing spaces;
+- print an escaped file URL when output is redirected or terminal links are unavailable; and
+- retain readable report labels and paths in history without hyperlink control sequences.
+
+### 0.8.3 - project display names
+
+- support optional project.name in zap.yml, independent of the CMake target;
+- suggest a name from local Git origin configuration or the folder during zap init, with a --name override; and
+- use the configured display name in project banners and audit summaries, retaining folder fallback for older manifests.
+
+### 0.8.2 - audit presentation
+
+- show terminal-only animated lightning progress during scanning, enrollment and signing;
+- retain complete file inventories and changes in each audit operation’s audit-report.json, with concise scope trees on screen;
+- explain initial key setup and highlight review prompts, preserving default-No approval;
+- show contextual coloured diffs with visible line endings and final-newline changes; and
+- preserve terminal colour detection through history capture.
+
+### 0.8.1 - hardware key enrollment correction
+
+- replace SSH signing with Windows TPM/CNG, macOS Secure Enclave and Linux TPM-device adapters; no software fallback;
+- let zap audit generate the initial protected key after explicit approval, save a resumable local reference, and publish only the public key in zap.yml;
+- refuse silent signer replacement and legacy SSH enrollment; preserve public identity through normal manifest updates; and
+- add enrollment/trust tests and document platform prerequisites and pending native hardware validation.
+
+### 0.8.0 - optional signed source baselines
+
+- extend zap audit with source comparisons, explicit default-No approval and OpenSSH signing;
+- retain exact source snapshots and prior signed baselines; pin the public key and latest checkpoint outside the project;
+- warn during normal operations without changing their exit status; existing dependency checks remain enforced;
+- detect local dependency edits independently of Git status and include downloaded dependency source directories; and
+- document the limits: no native TPM enrollment, build isolation, rollback, source-history signatures or automatic key migration. See docs/INTEGRITY.md.
+
+### 0.7.0 — local operation history
+
+- add zap e / zap exec command recording with child exit codes and separate output streams;
+- record normal Zap operations, before/after dependency snapshots, explicit dependency changes, and build inputs;
+- add zap log viewing, notes, snapshot comparisons, and explicit known-good build annotations; and
+- retain local history without automatic truncation or publishing. Rollback, archives, exports, and full terminal emulation remain future work; see docs/HISTORY.md.
+
 ### 0.6.4 — filesystem-identity cleanup checks
 
 - compare cleanup targets against the actual filesystem identities of the project root and every resolved ancestor, addressing the macOS case-alias deletion reported by CI;

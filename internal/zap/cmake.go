@@ -79,6 +79,10 @@ func GenerateCMakeWithLock(cfg *Config, lock *Lockfile) (string, error) {
 		if locked == nil {
 			continue
 		}
+		if env == "pico-sdk" && name == "pico-sdk" {
+			b.WriteString("# pico-sdk is imported before project() and initialized by pico_sdk_init().\n\n")
+			continue
+		}
 		typ := strings.ToLower(locked.Type)
 		safe := safeName(name)
 		if env == "zephyr" && locked.ZephyrModule {

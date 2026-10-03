@@ -48,6 +48,43 @@ or debug probe software. Those remain normal platform/toolchain prerequisites.
 
 Zap is one native executable.
 
+### Build Zap from source
+
+Install Go and ensure `go version` works in your terminal. The module declares Go
+1.22 as its minimum; CI currently uses Go 1.27.x. Building the Zap executable itself
+requires the Go toolchain; Node.js, CMake and a C/C++ compiler are not needed for this
+step. Git, CMake and platform compilers are needed by some integration tests and by
+the projects Zap manages.
+
+From the repository root (the folder containing `go.mod`), run in Windows PowerShell:
+
+```powershell
+go version
+go build -trimpath ./cmd/zap
+if ($LASTEXITCODE -eq 0) { .\zap.exe --version }
+```
+
+This creates `zap.exe` in the repository root for the current Go target platform
+(normally your computer's OS and architecture). Use `.\zap.exe help` to see commands.
+The `.\` prefix ensures PowerShell runs this local build instead of an older installed
+copy on `PATH`. The generated root executable is ignored by Git.
+
+For a native Linux or macOS build:
+
+```sh
+go build -trimpath ./cmd/zap && ./zap --version
+```
+
+The build command `go build -trimpath ./cmd/zap` works on all three platforms:
+Go chooses `zap.exe` for a Windows target and `zap` for Linux/macOS. An explicit
+`-o ./zap` forces that exact filename, including on Windows; it does not add `.exe`.
+The filename alone does not select the target OS. If a binary still cannot run,
+check `go env GOOS GOARCH` for a leftover cross-compilation target.
+
+Local builds use the version in `cmd/zap/main.go`. Release automation overrides that
+value from the Git tag and handles packaging/signing; see
+[release distribution](docs/RELEASE_DISTRIBUTION.md).
+
 ### Download the latest release
 
 These links always follow the GitHub release currently marked **Latest**:
@@ -187,8 +224,30 @@ It also adds two clearly marked managed regions to the root `CMakeLists.txt`. Za
 only replace text inside those regions; malformed or duplicated markers are an error.
 
 Zap does **not** rewrite `west.yml`, `prj.conf`, Pico SDK files, Zephyr source/build
-files, or arbitrary vendor files. An existing `zap.yml` is not overwritten unless you
-explicitly use `zap init --force`.
+files, or arbitrary vendor files. Run `zap init` again on an existing project to revisit
+settings: Enter retains current values, proposed changes are summarised, and saving
+defaults to No. Only selected manifest fields are updated; dependency resolution and
+generated-file updates wait for `zap sync`. `--force` is no longer needed.
+See [guided setup](docs/SETUP.md) for the update flow and non-interactive options.
+
+`zap init` also asks for a project display name, suggesting the repository name from
+local Git `origin` configuration, or the folder name if no origin is available. No
+network lookup is needed for this suggestion. Use `zap init --name "Hub"` to supply
+the name explicitly, including with `--non-interactive`.
+
+`zap init` also asks whether signer entries should expose readable account/host names
+or SHA-256 identifiers. The default is hashed; scripts can use `--signer-identity
+hashed` or `--signer-identity public`. This per-user preference stays outside the repo. An optional `--signer-label` provides
+a public alias. Rerun `zap init` to revisit these choices and optionally update your
+own already-published signer entry.
+Hashes are guessable pseudonyms, not proof of a person or host; the signature establishes
+the signing key. See [identity privacy](docs/INTEGRITY.md#identity-privacy-choice-during-init).
+
+The optional `project.name` field controls project banners and the audit summary.
+It is independent of `project.target`, which remains the CMake target. Existing
+manifests without a name fall back to the folder name. To name an existing project,
+add `name: Hub` under its existing `project:` block, or rerun `zap init`.
+Changing zap.yml will be detected by your next signed-source audit.
 
 ### 2. Synchronise dependencies
 
@@ -255,6 +314,7 @@ New project manifests use **`zap.yml` schema 5**. Current lockfiles use
 schema: 5
 
 project:
+  name: Controller
   environment: pico-sdk
   target: controller
   board: pico2_w
@@ -612,6 +672,12 @@ zap upload --artifact path/to/custom.uf2
 An `auto` upload method can try configured methods in order. Explicitly selecting a
 method never falls through to another method.
 
+For an ELF upload through a debug probe, use
+`zap upload --method openocd --artifact build/hub.elf`. The artifact override
+applies to every attempted method, so avoid auto mode with an ELF when the order
+includes UF2 volume copying. As of 0.11.1, `{artifact}` uses forward slashes on
+Windows so OpenOCD does not interpret path separators as Tcl escapes.
+
 See [`docs/UPLOAD.md`](docs/UPLOAD.md) for placeholders, variables, optional arguments,
 tool discovery, and examples.
 
@@ -701,7 +767,7 @@ Show the installed Zap version or command help.
 | `zap list` | Show configured dependencies and locked resolutions |
 | `zap status` | Show lock/materialisation state |
 | `zap verify [--offline]` | Check lock and Git checkout consistency |
-| `zap audit` | List literal external source URLs in project manifests |
+| `zap audit` | Review external sources and verify/approve signed source baselines |
 | `zap generate` | Regenerate managed CMake/Zephyr files |
 | `zap check` | Check generated files and integration markers |
 | `zap make [...]` | Sync/configure/build |
@@ -763,6 +829,14 @@ ZAP_COLOR=never
 
 ---
 
+## Project history
+
+Use `zap e <executable> [args...]` to record a command, `zap log` to read history,
+and `zap log -m "note"` to add a comment. Normal Zap operations record dependency
+snapshots in the Git-ignored `.zap/` directory. No automatic truncation or rollback
+is performed. See [history and recording](docs/HISTORY.md) for commands, privacy,
+interactive-terminal limitations, and known-good build annotations.
+
 ## Documentation
 
 - [`docs/FIRST_RUN.md`](docs/FIRST_RUN.md) — first project setup
@@ -778,3 +852,22 @@ ZAP_COLOR=never
 ## License
 
 Apache-2.0.
+
+### Shared hardware-signed source audit (0.9.0)
+
+Run `zap audit` to approve a source baseline with a hardware-protected key. Public identities live in `.zap/signers.json`; every listed key is authorised by Git/human review, without a separate local trust workflow. Share that file and `.zap/hash.json` so teammates can verify without your private key. `zap audit --enroll` adds their own signer; `zap audit --migrate-signers` moves the legacy public key out of `zap.yml`. Private signing uses Windows TPM/CNG, macOS Secure Enclave or Linux TPM 2.0, with no software fallback. Normal commands warn and continue. See [the integrity guide](docs/INTEGRITY.md) for migration, selected Git files and limitations. The 0.9.0 source changes have not been built or tested.
+
+### Managed Pico SDK (0.11.0)
+
+Declare the SDK with `zap add pico-sdk --git https://github.com/raspberrypi/pico-sdk.git --version 2.3.0`.
+For an existing declaration, run `zap sync --no-configure` with the updated executable.
+Include `cmake/zap_sdk.cmake` after IDE SDK defaults and before `pico_sdk_import.cmake` and `project()`.
+Keep one `pico_sdk_init()` call before including `cmake/zap_deps.cmake`.
+Zap selects the locked SDK checkout (or its explicit dependency override), overriding an installed SDK or stale SDK cache entry.
+Without a declared SDK, existing installed SDK discovery remains available. Toolchains and picotool still use the existing discovery rules.
+The generated SDK selection contains an absolute local path; regenerate after moving the project or changing dependency overrides.
+
+Managed Git checkouts initialize recursive submodules at recorded gitlink commits, never branch tips.
+Repositories declaring submodules use a full checkout even when they provide a component manifest.
+Verification rejects missing, mismatched, conflicted or modified submodules; local path dependencies and explicit overrides remain developer-controlled.
+Submodule downloads require network access. Existing local changes are not forcibly discarded.

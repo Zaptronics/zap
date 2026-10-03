@@ -4,3 +4,7 @@
 /stage/
 *.test
 *.patch
+/.zap/*
+!/.zap/.gitignore
+!/.zap/signers.json
+!/.zap/hash.json

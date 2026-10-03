@@ -145,7 +145,7 @@ func (p *Project) Make(c *Config, o MakeOptions) error {
 	if o.Configuration == "" {
 		o.Configuration = "Release"
 	}
-	detail := fmt.Sprintf("%s · %s · %s", c.Project.Target, c.Project.Environment, o.Configuration)
+	detail := fmt.Sprintf("%s · %s · %s", p.displayName(c), c.Project.Environment, o.Configuration)
 	board := o.Board
 	if board == "" {
 		board = c.Project.Board
@@ -189,6 +189,18 @@ func (p *Project) Make(c *Config, o MakeOptions) error {
 		}
 	}
 
+	if currentHistory != nil {
+		if err := currentHistory.recordBuildContext(c, o); err != nil {
+			return err
+		}
+		state, err := currentHistory.snapshot("build-input")
+		if err != nil {
+			return fmt.Errorf("cannot record build inputs: %w", err)
+		}
+		if err := currentHistory.event(historyEvent{Kind: "build-input", State: state}); err != nil {
+			return err
+		}
+	}
 	if err := p.ConfigureWithOptions(c, ConfigureOptions{
 		Configuration: o.Configuration,
 		BuildDir:      o.BuildDir,
@@ -238,7 +250,13 @@ func (p *Project) Make(c *Config, o MakeOptions) error {
 		}
 	}
 
-	return p.reportBuildOutputs(c, buildPath, time.Since(started))
+	if err := p.reportBuildOutputs(c, buildPath, time.Since(started)); err != nil {
+		return err
+	}
+	if currentHistory != nil {
+		currentHistory.buildSucceeded = true
+	}
+	return nil
 }
 
 func zapExecutableEnv(offline bool) []string {

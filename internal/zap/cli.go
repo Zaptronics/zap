@@ -12,12 +12,14 @@ import (
 
 var Version = "dev"
 
-func Run(args []string) error {
+func runCommand(args []string) error {
 	root, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 	p := OpenProject(root)
+	finishIntegrity := p.integrityCommandWarnings(args)
+	defer finishIntegrity()
 	if len(args) == 0 {
 		return runSync(p, nil)
 	}
@@ -30,11 +32,13 @@ func Run(args []string) error {
 	case "--version", "version-tool":
 		fmt.Printf("%s %s\n", paint(ansiEnabled(os.Stdout), ansiBold+ansiCyan, "zap"), Version)
 		return nil
-	case "init", "new":
+	case "init", "-init", "--init", "new":
 		fs, o := InitFlagSet()
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
+		o.Explicit = map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { o.Explicit[f.Name] = true })
 		return p.Init(*o)
 	case "sync":
 		return runSync(p, rest)
@@ -68,7 +72,7 @@ func Run(args []string) error {
 		if err != nil {
 			return err
 		}
-		uiBanner("Generate", c.Project.Target)
+		uiBanner("Generate", p.displayName(c))
 		return p.Generate(c)
 	case "check":
 		c, err := p.ReadConfig()
@@ -92,24 +96,16 @@ func Run(args []string) error {
 			return err
 		}
 		if !*cmakeMode {
-			uiBanner("Verify", c.Project.Target)
+			uiBanner("Verify", p.displayName(c))
 		}
 		return p.Verify(c, VerifyOptions{Offline: *offline, CMake: *cmakeMode})
 	case "audit":
-		uiBanner("Audit", filepath.Base(p.Root))
-		sources, err := scanExternalSources(p.Root)
+		c, err := p.ReadConfig()
 		if err != nil {
 			return err
 		}
-		if len(sources) == 0 {
-			uiSuccess("No literal external dependency/source URLs found")
-			return nil
-		}
-		uiSection("External sources")
-		for _, src := range sources {
-			uiDetail(src.File, src.URI)
-		}
-		return nil
+		uiBanner("Audit", p.displayName(c))
+		return runIntegrityAudit(p, rest)
 	case "list":
 		return listConfig(p)
 	case "status":
@@ -156,7 +152,7 @@ func runSync(p *Project, args []string) error {
 	if err != nil {
 		return err
 	}
-	uiBanner("Sync", fmt.Sprintf("%s · %s", c.Project.Target, c.Project.Environment))
+	uiBanner("Sync", fmt.Sprintf("%s · %s", p.displayName(c), c.Project.Environment))
 	if err := p.Sync(c); err != nil {
 		return err
 	}
@@ -175,7 +171,7 @@ func listConfig(p *Project) error {
 		return err
 	}
 	lock, _ := p.ReadLock()
-	uiBanner("Project", c.Project.Target)
+	uiBanner("Project", p.displayName(c))
 	uiDetail("Environment", c.Project.Environment)
 	uiDetail("Target", c.Project.Target)
 	if c.Project.Board != "" {
@@ -230,7 +226,7 @@ func status(p *Project) error {
 	if err != nil {
 		return err
 	}
-	uiBanner("Status", c.Project.Target)
+	uiBanner("Status", p.displayName(c))
 	if lock == nil {
 		uiWarning("zap.lock is missing")
 		uiHint("run 'zap sync' to resolve dependencies")
@@ -400,8 +396,13 @@ func printHelp() {
 	uiHelpCommand("zap list", "", "Show dependency intent and locked resolution")
 	uiHelpCommand("zap version", "<dep> <constraint>", "Change a dependency version constraint")
 	uiHelpCommand("zap verify", "[--offline]", "Verify zap.lock, checkouts, and immutable sources")
-	uiHelpCommand("zap audit", "", "List literal external sources in build manifests")
+	uiHelpCommand("zap audit", "[--non-interactive]", "Review sources against a baseline signed by a listed key")
+	uiHelpCommand("zap audit", "--enroll", "Add your hardware signer to the shared signer list")
+	uiHelpCommand("zap audit", "--migrate-signers", "Move the legacy public key out of zap.yml")
 
+	uiHelpSection("History")
+	uiHelpCommand("zap e", "<command> [args...]", "Run and record an executable; exec is an alias")
+	uiHelpCommand("zap log", "[-m note | show <id> | diff <id> | mark-good <id> -m note]", "Read history or add a note")
 	uiHelpSection("Tool")
 	uiHelpCommand("zap help", "", "Show this help")
 	uiHelpCommand("zap version-tool", "", "Show the installed Zap version")

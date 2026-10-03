@@ -200,3 +200,22 @@ Check the checksums and signing information actually provided with each release.
 source tests do not establish that a published binary, checksum file, signature or
 package-manager channel exists or matches this source. Release provenance requires
 separate validation.
+
+
+## Local operation history
+
+History under `.zap/` is editable local diagnostic evidence, not an authenticated audit trail.
+Recorded text has best-effort secret redaction; exact manifest snapshots are unredacted.
+Do not publish recordings without review. Recording failures are reported, but crashes and
+disk failures can leave incomplete records. History does not make arbitrary `zap e` commands
+safe or reversible. See [history limitations](docs/HISTORY.md).
+
+## Shared hardware-signed source baselines (0.9.0)
+
+The checked-out `.zap/signers.json` authorises every listed public key. Git/human review governs that list; Zap does not independently approve new signers or authenticate user/device labels. Anyone able to modify the list can authorise another key. Verification needs the shared signer list and signed `.zap/hash.json`, not another developer's private-key reference.
+
+New signer entries default to hashed account/host labels; zap init can select readable labels instead. These hashes are deterministic, guessable and correlatable pseudonyms. They do not authenticate the person, attest a host, or prove authorship of source code. The signed inventory binds the recorded registry bytes; the key fingerprint is the cryptographic signing identity. Existing public labels and Git history are not automatically removed.
+
+Private signing still uses the platform hardware adapters with no software fallback. Public signatures do not attest how a manually listed key was generated. Signer-list contents are included in source checks, but the current list is the verification authority. The former outside-project latest-baseline digest is no longer an anti-replay gate; restoring an older valid baseline is governed by Git review. A revoked/unlisted signer cannot verify a baseline.
+
+Source signatures do not secure a compromised verifier, authenticate history journals or eliminate check-to-use races. Migration from the old zap.yml public key is explicit. Native behaviour and the new collaboration flow need user validation: this source-only change was not built, tested or exhaustively reviewed. See [docs/INTEGRITY.md](docs/INTEGRITY.md).

@@ -65,7 +65,9 @@ func runStreaming(dir, program string, args ...string) error {
 	return runStreamingEnv(dir, nil, program, args...)
 }
 
-func runStreamingEnv(dir string, extraEnv []string, program string, args ...string) error {
+func runStreamingEnv(dir string, extraEnv []string, program string, args ...string) (result error) {
+	toolFinished := beginHistoryTool(dir, program, args)
+	defer func() { toolFinished(result, "", "") }()
 	cmd := exec.Command(program, args...)
 	if dir != "" {
 		cmd.Dir = dir
@@ -86,7 +88,7 @@ func runStreamingEnv(dir string, extraEnv []string, program string, args ...stri
 	return nil
 }
 
-func runCapture(dir, program string, args ...string) (string, error) {
+func runCapture(dir, program string, args ...string) (result string, resultErr error) {
 	cmd := exec.Command(program, args...)
 	if dir != "" {
 		cmd.Dir = dir
@@ -95,6 +97,8 @@ func runCapture(dir, program string, args ...string) (string, error) {
 		cmd.Env = sanitizedGitEnv(os.Environ())
 	}
 	var out, errb bytes.Buffer
+	toolFinished := beginHistoryTool(dir, program, args)
+	defer func() { toolFinished(resultErr, out.String(), errb.String()) }()
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
@@ -117,7 +121,7 @@ func findProgram(name string) (string, error) {
 }
 
 func gitClean(git, path string) (bool, string, error) {
-	out, err := runCapture("", git, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", path, "status", "--porcelain", "--untracked-files=normal")
+	out, err := runCapture("", git, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", path, "status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
 	if err != nil {
 		return false, "", err
 	}
@@ -365,4 +369,39 @@ func fetchCommitForLock(git, name, path, uri, resolved, commit string) error {
 		}
 	}
 	return fmt.Errorf("dependency %q locked commit %s could not be fetched from %s", name, commit, uri)
+}
+
+// The locked superproject commit records each submodule commit through gitlinks.
+// Never use --remote: it would follow branches instead of those recorded commits.
+func syncSubmodules(git, name, path string) error {
+	if err := runStreaming("", git, "-C", path, "submodule", "sync", "--recursive"); err != nil {
+		return fmt.Errorf("dependency %q submodule URL sync failed: %w", name, err)
+	}
+	if err := runStreaming("", git, "-C", path, "submodule", "update", "--init", "--recursive", "--checkout", "--depth=1"); err != nil {
+		return fmt.Errorf("dependency %q submodule checkout failed: %w", name, err)
+	}
+	return verifySubmodules(git, name, path)
+}
+
+func verifySubmodules(git, name, path string) error {
+	out, err := runCapture("", git, "-C", path, "submodule", "status", "--recursive")
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && strings.ContainsAny(line[:1], "-+U") {
+			return fmt.Errorf("dependency %q has an uninitialized, mismatched or conflicted submodule: %s; run 'zap sync' (preserve local changes first)", name, line)
+		}
+	}
+	// Explicitly inspect every initialized worktree, even if local Git config
+	// ignores submodule dirtiness in the superproject's status.
+	out, err = runCapture("", git, "-C", path, "submodule", "foreach", "--quiet", "--recursive", "git -c core.fsmonitor=false -c core.untrackedCache=false status --porcelain --untracked-files=normal --ignore-submodules=none")
+	if err != nil {
+		return err
+	}
+	if out != "" {
+		return fmt.Errorf("dependency %q has modified submodule contents:\n%s", name, out)
+	}
+	return nil
 }
