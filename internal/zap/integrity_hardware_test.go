@@ -2,7 +2,6 @@
 package zap
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,31 +47,34 @@ func TestHardwarePublicIdentityPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.HasPrefix(data, []byte(original)) {
+	if string(data) != original {
 		t.Fatal("publication rewrote user's manifest")
 	}
-	cfg, err := ParseConfig(string(data))
+	_, fp, err := integrityPublicKey([]byte(public))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.IntegrityPublicKey != public {
-		t.Fatal("public identity not published")
+	list, err := readIntegritySigners(p.Root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	again, err := ParseConfig(FormatConfig(cfg))
-	if err != nil || again.IntegrityPublicKey != public {
-		t.Fatal("normal config write lost signer")
+	if signerPublic(list, fp) != public {
+		t.Fatal("public identity not published")
 	}
 	if err := publishHardwareIdentity(p, trust); err != nil {
 		t.Fatal(err)
 	}
-	_, other := integrityTestKey(t)
-	if err := publishHardwareIdentity(p, &integrityTrust{PublicKey: other}); err == nil {
-		t.Fatal("public key silently replaced")
+	if list, err = readIntegritySigners(p.Root); err != nil || len(list.Signers) != 1 {
+		t.Fatalf("republication duplicated signer: %v", err)
 	}
 	if err := persistHardwareTrust(p.Root, trust); err == nil {
 		t.Fatal("local trust silently replaced")
 	}
-	if strings.Contains(string(data), ref) {
+	signers, err := os.ReadFile(filepath.Join(p.Root, ".zap", "signers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(signers), ref) {
 		t.Fatal("private-key reference published")
 	}
 }
@@ -80,9 +82,13 @@ func TestHardwareSignedIdentityChangeIsTrustFailure(t *testing.T) {
 	integrityTestTrustDir(t)
 	p := OpenProject(t.TempDir())
 	ref, public := integrityTestKey(t)
-	c := &Config{IntegrityPublicKey: public, Project: ProjectConfig{Environment: "generic", Target: "demo"}, Dependencies: map[string]*DependencyConfig{}}
+	c := &Config{Project: ProjectConfig{Environment: "generic", Target: "demo"}, Dependencies: map[string]*DependencyConfig{}}
 	c.normalize()
 	if err := p.WriteConfig(c); err != nil {
+		t.Fatal(err)
+	}
+	trust := &integrityTrust{PublicKey: public, SigningKey: ref}
+	if err := publishHardwareIdentity(p, trust); err != nil {
 		t.Fatal(err)
 	}
 	roots, err := p.integrityRoots(c)
@@ -93,16 +99,20 @@ func TestHardwareSignedIdentityChangeIsTrustFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveIntegrityBaseline(p.Root, &integrityTrust{PublicKey: public, SigningKey: ref}, m); err != nil {
+	if err := saveIntegrityBaseline(p.Root, trust, m); err != nil {
+		t.Fatal(err)
+	}
+	// Replace the reviewed signer list with a different key: the existing
+	// baseline's signer is no longer authorised.
+	if err := os.Remove(filepath.Join(p.Root, ".zap", "signers.json")); err != nil {
 		t.Fatal(err)
 	}
 	_, replacement := integrityTestKey(t)
-	c.IntegrityPublicKey = replacement
-	if err := p.WriteConfig(c); err != nil {
+	if err := publishHardwareIdentity(p, &integrityTrust{PublicKey: replacement}); err != nil {
 		t.Fatal(err)
 	}
 	err = runIntegrityAudit(p, []string{"--non-interactive"})
-	if err == nil || !strings.Contains(err.Error(), "signing identity changed") {
+	if err == nil || !strings.Contains(err.Error(), "baseline signer is not listed") {
 		t.Fatalf("expected trust error: %v", err)
 	}
 }

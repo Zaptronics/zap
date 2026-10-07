@@ -76,12 +76,15 @@ func TestIntegrityBaselineRoundTripAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trust := &integrityTrust{PublicKey: public, SigningKey: key}
+	if err := publishHardwareIdentity(OpenProject(root), trust); err != nil {
+		t.Fatal(err)
+	}
 	roots := []integrityRoot{{ID: "project", Path: root}}
 	first, err := scanIntegrity(roots, filepath.Join(dir, "objects"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	trust := &integrityTrust{PublicKey: public, SigningKey: key}
 	if err := saveIntegrityBaseline(root, trust, first); err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +116,22 @@ func TestIntegrityBaselineRoundTripAndRollback(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".zap", "hash.json"), original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := readIntegrityBaseline(root, loaded); err == nil {
-		t.Fatal("older signed baseline replay accepted")
+	// Restoring an older valid baseline is governed by Git review, not a local
+	// anti-replay gate (see docs/INTEGRITY.md), so it still verifies while its
+	// signer is listed.
+	if _, _, err := readIntegrityBaseline(root, loaded); err != nil {
+		t.Fatalf("listed signer's older baseline rejected: %v", err)
+	}
+	// Removing the signer from the reviewed list revokes its baselines.
+	if err := os.Remove(filepath.Join(root, ".zap", "signers.json")); err != nil {
+		t.Fatal(err)
+	}
+	_, other := integrityTestKey(t)
+	if err := publishHardwareIdentity(OpenProject(root), &integrityTrust{PublicKey: other}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readIntegrityBaseline(root, loaded); err == nil || !strings.Contains(err.Error(), "not listed") {
+		t.Fatalf("unlisted signer's baseline accepted: %v", err)
 	}
 }
 func TestIntegrityRefusesSourceChangesBeforeSigning(t *testing.T) {
@@ -123,12 +140,16 @@ func TestIntegrityRefusesSourceChangesBeforeSigning(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "source")
 	os.WriteFile(path, []byte("reviewed"), 0600)
+	trust := &integrityTrust{PublicKey: public, SigningKey: key}
+	if err := publishHardwareIdentity(OpenProject(root), trust); err != nil {
+		t.Fatal(err)
+	}
 	m, err := scanIntegrity([]integrityRoot{{ID: "project", Path: root}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(path, []byte("changed"), 0600)
-	err = saveIntegrityBaseline(root, &integrityTrust{PublicKey: public, SigningKey: key}, m)
+	err = saveIntegrityBaseline(root, trust, m)
 	if err == nil || !strings.Contains(err.Error(), "changed during signing") {
 		t.Fatalf("expected race rejection, got %v", err)
 	}
@@ -239,8 +260,7 @@ func TestIntegrityDownloadedArchiveSourceAndWarning(t *testing.T) {
 	}
 	key, public := integrityTestKey(t)
 	trust := &integrityTrust{PublicKey: public, SigningKey: key}
-	c.IntegrityPublicKey = public
-	if err := p.WriteConfig(c); err != nil {
+	if err := publishHardwareIdentity(p, trust); err != nil {
 		t.Fatal(err)
 	}
 	m, err = scanIntegrity(roots, "")

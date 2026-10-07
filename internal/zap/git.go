@@ -384,7 +384,9 @@ func syncSubmodules(git, name, path string) error {
 }
 
 func verifySubmodules(git, name, path string) error {
-	out, err := runCapture("", git, "-C", path, "submodule", "status", "--recursive")
+	// Disable checkout-controlled fsmonitor hooks here too: submodule commands
+	// refresh the index, which would otherwise run core.fsmonitor.
+	out, err := runCapture("", git, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", path, "submodule", "status", "--recursive")
 	if err != nil {
 		return err
 	}
@@ -396,7 +398,7 @@ func verifySubmodules(git, name, path string) error {
 	}
 	// Explicitly inspect every initialized worktree, even if local Git config
 	// ignores submodule dirtiness in the superproject's status.
-	out, err = runCapture("", git, "-C", path, "submodule", "foreach", "--quiet", "--recursive", "git -c core.fsmonitor=false -c core.untrackedCache=false status --porcelain --untracked-files=normal --ignore-submodules=none")
+	out, err = runCapture("", git, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", path, "submodule", "foreach", "--quiet", "--recursive", "git -c core.fsmonitor=false -c core.untrackedCache=false status --porcelain --untracked-files=normal --ignore-submodules=none")
 	if err != nil {
 		return err
 	}
