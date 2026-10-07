@@ -205,6 +205,31 @@ initial PR.
 Future tagged releases are then submitted automatically with `wingetcreate
 update`.
 
+### Manual WinGet update
+
+Until automatic publication is enabled (it also requires
+`ZAP_SIGN_WINDOWS=true`), submit each new version by hand once its GitHub
+Release exists. This mirrors the workflow's `winget` job:
+
+```powershell
+$tag = "vX.Y.Z"
+$base = "https://github.com/Zaptronics/zap/releases/download/$tag"
+wingetcreate update Zaptronics.Zap `
+  --version $tag.TrimStart('v') `
+  --urls "$base/zap_windows_amd64.zip|x64" "$base/zap_windows_arm64.zip|arm64" `
+  --release-notes-url "https://github.com/Zaptronics/zap/releases/tag/$tag" `
+  --submit
+```
+
+WingetCreate signs in to GitHub, forks `microsoft/winget-pkgs` and opens the
+update PR. Track it there until it merges.
+
+If WingetCreate reports that the forked repository could not be synced, your
+fork of `microsoft/winget-pkgs` has fallen behind or diverged. Open the fork on
+GitHub and use **Sync fork -> Update branch** (choose **Discard commits** if
+offered; the fork holds nothing worth keeping), or run
+`gh repo sync <your-user>/winget-pkgs --force`, then rerun the command.
+
 ## Creating a release
 
 Before tagging, run the release/current security gate:
@@ -218,15 +243,52 @@ git status
 The release workflow accepts stable tags in `vMAJOR.MINOR.PATCH` form. Roadmap claim
 probes are intentionally separate and are not a substitute for the release gate.
 
-Then:
+Commit and push the release changes first, so the tag points at the commit
+you tested:
 
 ```powershell
-git tag vX.Y.Z
+git add <changed files>
+git commit -m "Zap X.Y.Z"
+git push
+```
+
+Then tag that commit and push the tag. A plain `git push` does not push tags;
+the tag push is what starts the release:
+
+```powershell
+git tag -a vX.Y.Z -m "Zap X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Watch **GitHub -> Actions -> Release**. The GitHub Release appears only after
-all platform builds succeed.
+Watch **GitHub -> Actions -> Release** (use the sidebar to filter by workflow;
+the separate **CI** workflow also runs for every push and does not gate
+releases). The GitHub Release appears only after all platform builds succeed.
+
+### If the release workflow fails
+
+If the `test` job fails, no GitHub Release is published. Fix the cause, commit
+and push, then move the unpublished tag to the fixed commit:
+
+```powershell
+git tag -d vX.Y.Z
+git push origin :refs/tags/vX.Y.Z
+git tag -a vX.Y.Z -m "Zap X.Y.Z"
+git push origin vX.Y.Z
+```
+
+Only move a tag whose release was never published. Once a release exists,
+cut a new patch version instead. For a failure in a later job with the tag
+already correct, **Re-run failed jobs** on the run page is enough.
 
 If Homebrew/WinGet publication is enabled, those jobs run after the GitHub
 Release exists.
+
+## Release status
+
+| Item | State |
+| --- | --- |
+| Latest release | `v0.11.1` published 2026-10-07, unsigned |
+| Windows signing (`ZAP_SIGN_WINDOWS`) | Not configured |
+| macOS signing (`ZAP_SIGN_MACOS`) | Not configured |
+| Homebrew tap | Not set up |
+| WinGet | `Zaptronics.Zap` accepted; `0.11.1` submitted manually in [winget-pkgs#448090](https://github.com/microsoft/winget-pkgs/pull/448090); automatic updates off until Windows signing is enabled |
